@@ -21,6 +21,7 @@ oci instance-agent command-execution get --command-id <命令の OCID> --instanc
 - コマンドは `ocarun` というユーザで動く（実測）。root で動かすものは、`/etc/sudoers.d/` で `ocarun` に許す。許していないコマンドの `sudo` は断られた（実測）。
 - VM（の dynamic group）に、命令を受ける権限が要る:
   `Allow dynamic-group <名前> to use instance-agent-command-execution-family in compartment <名前> where request.instance.id = target.instance.id`
+- VM を作った直後に送った命令は、初めての起動の設定（`/etc/sudoers.d/` の許可を置く段）が済む前に実行され、`sudo: a password is required` で `FAILED` になった（2026-11-14 実測。作り直した A1 で、作り終えた直後に送った）。起動の設定が終わる前でも、エージェントは命令を受け取る。
 - dynamic group を先に作ってから VM を作ると、VM はすぐに命令を取りに来る。VM を作ってから dynamic group に入れると、取りに来るまで最大 30 分かかる（公式文書）。
 
 ## 3. 届くまでの時間
