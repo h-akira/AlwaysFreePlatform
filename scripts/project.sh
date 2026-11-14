@@ -116,8 +116,11 @@ cmd_deploy() {
   local names=()
   while read -r name _; do names+=("$name"); done <<< "$services"
   echo "Building ${names[*]} for linux/$arch at $tag ..."
-  DOCKER_DEFAULT_PLATFORM="linux/$arch" docker compose -f "$compose" build "${names[@]}"
-  docker compose -f "$compose" push "${names[@]}"
+  # No attestations: with them the image is an index, and OCIR answers 409 to
+  # the index and tags the attestation manifest instead (measured 2026-11-14).
+  DOCKER_DEFAULT_PLATFORM="linux/$arch" BUILDX_NO_DEFAULT_ATTESTATIONS=1 \
+    docker compose -f "$compose" build "${names[@]}"
+  docker compose -f "$compose" push --quiet "${names[@]}"
 
   oci_ os object put -bn "$BUCKET" --name "releases/$project/$tag/compose.afp.yaml" \
     --file "$compose" --content-type application/yaml --force > /dev/null \

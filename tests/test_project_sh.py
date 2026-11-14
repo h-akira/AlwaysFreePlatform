@@ -68,6 +68,7 @@ d = Path(os.environ["FAKE_DIR"])
 args = sys.argv[1:]
 with open(d / "docker.log", "a") as f:
     f.write(json.dumps({"args": args, "platform": os.environ.get("DOCKER_DEFAULT_PLATFORM"),
+                        "no_attest": os.environ.get("BUILDX_NO_DEFAULT_ATTESTATIONS"),
                         "tag": os.environ.get("AFP_TAG"), "prefix": os.environ.get("AFP_IMAGE_PREFIX")}) + "\n")
 if args[:1] == ["login"]:
     sys.stdin.read()
@@ -135,6 +136,7 @@ def test_deploy(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
     [build] = [c for c in docker if "build" in c["args"]]
     assert build["args"][-1:] == ["web"]  # only the services with build:
     assert build["platform"] == "linux/arm64"  # the VM's CPU type
+    assert build["no_attest"] == "1"  # a plain manifest; OCIR rejects the index
     assert (build["tag"], build["prefix"]) == ("v1", f"{PREFIX_BASE}/hello")
     [push] = [c for c in docker if "push" in c["args"]]
     assert push["args"][-1:] == ["web"]
