@@ -118,7 +118,7 @@ def test_wrapped_script_passes_success() -> None:
     assert (result.returncode, result.stdout) == (0, "ok\n")
 
 
-PREFIX = "nrt.ocir.io/ns/afp/hello"
+PREFIX = "iad.ocir.io/ns/afp/hello"
 
 
 def test_build_services_takes_only_built_ones() -> None:
@@ -130,7 +130,7 @@ def test_build_services_takes_only_built_ones() -> None:
     assert rm_values.build_services(config, PREFIX) == [("web", "afp/hello/web"), ("worker", "afp/hello/worker")]
 
 
-@pytest.mark.parametrize("image", ["", "web:v1", f"{PREFIX}/web", "nrt.ocir.io/ns/afp/other/web:v1"])
+@pytest.mark.parametrize("image", ["", "web:v1", f"{PREFIX}/web", "iad.ocir.io/ns/afp/other/web:v1"])
 def test_build_services_refuses_other_images(image: str) -> None:
     with pytest.raises(ValueError):
         rm_values.build_services({"services": {"web": {"build": {}, "image": image}}}, PREFIX)

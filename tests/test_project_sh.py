@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "project.sh"
-PREFIX_BASE = "nrt.ocir.io/ns/afp"
+PREFIX_BASE = "iad.ocir.io/ns/afp"
 
 FAKE_OCI = r'''
 import json, os, sys
@@ -141,7 +141,7 @@ def test_deploy(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
     [push] = [c for c in docker if "push" in c["args"]]
     assert push["args"][-1:] == ["web"]
     [login] = [c for c in docker if c["args"][:1] == ["login"]]
-    assert login["args"] == ["login", "nrt.ocir.io", "-u", "BEARER_TOKEN", "--password-stdin"]
+    assert login["args"] == ["login", "iad.ocir.io", "-u", "BEARER_TOKEN", "--password-stdin"]
 
     assert (tmp_path / "put-name").read_text() == "releases/hello/v1/compose.afp.yaml"
     assert (tmp_path / "release.yaml").read_text() == "services: {}\n"
