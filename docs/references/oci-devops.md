@@ -29,6 +29,9 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - **トリガーの出来事**（GitHub などの外のリポジトリ）: Push・Pull Request Created・Updated・Merged・Reopened。Push では、ブランチの名前と、含める・除くファイルの glob で絞れる。**タグの push を出来事として選べる・タグの名前で絞れるという記述は無い**（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。
 - **GitHub への接続**: GitHub の Personal Access Token を Vault のシークレットに入れ、接続はそのシークレットを指す。文書の手順は classic のトークンで、非公開のリポジトリを読むには「Full control of private repositories」（`repo`）を付けるとされる。fine-grained のトークンの記述は無い（[Build Source Integration](https://docs.oracle.com/en-us/iaas/Content/devops/using/getting_started.htm)）。
 - **webhook**: GitHub のトリガーは、GitHub の側に webhook と秘密の文字列を設定しなければならない。中身の形式は `application/json`。トリガーの URL と秘密の文字列は、コンソールでトリガーを作ったときに一度だけ表示され、あとから取り出せない（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。Terraform の `oci_devops_trigger` が出す属性は `trigger_url` までで、秘密の文字列は無い（[プロバイダの文書](https://registry.terraform.io/providers/oracle/oci/latest/docs/resources/devops_trigger)。2026-11-15）。
+- **webhook の秘密の文字列（Secret）を API で得られるのは、作成の応答だけ**: SDK の型で、`secret` があるのは作成の応答の `GithubTriggerCreateResult` だけ。取得の `GithubTrigger`・一覧の `GithubTriggerSummary` には無い（[oci-go-sdk の devops](https://github.com/oracle/oci-go-sdk/tree/master/devops)）。作り直す API も無い（CLI 3.96.0 の `oci devops trigger` の命令の一覧）。
+- **Terraform で作ると Secret は得られない**: プロバイダ 9.12.1 は、作成の応答から ID だけを取り、取得の API で読み直して state に書く（[devops_trigger_resource.go](https://github.com/oracle/terraform-provider-oci/blob/master/internal/service/devops/devops_trigger_resource.go)）。要望の issue [#1681](https://github.com/oracle/terraform-provider-oci/issues/1681) は 2022-10 から開いたまま（2026-11-15）。
+- CLI の `create-github-trigger` は、作成の応答を出力する。`--wait-for-state` を付けると、出力は作業の進み具合（work request）になる（CLI の `--help`。Secret が出なくなる見込み。未確認）。
 - **ビルドの実行環境**（build runner）: Oracle Linux 8 のコンテナ。入っている道具に OCI CLI 3.58.1・Git 2.48.1・Python 3.11.11・**Podman 4.9.4**（Docker でなく）がある。版は変わりうる（[Build Runner Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/runtime_details.htm)）。`sudo` は使えない（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
 - 実行環境の大きさは、既定が 2 OCPU・8 GB。変えられるが、用意に時間がかかる。**CPU の種類（arm64 が選べるか）の記述は無い**（[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)）。
 - **料金**: 「ビルドの間に使った実行環境（OCPU とメモリ）の分を課金する」（同上）。単価は確かめていない。
@@ -40,7 +43,6 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - インスタンス・グループへのデプロイに料金がかかるか。
 - GitHub のタグの push でトリガーが動くか（§3）。
 - fine-grained のトークン（対象のリポジトリだけ・Contents の読み取りだけ）で、非公開のリポジトリを読めるか（§3）。
-- Terraform で作った GitHub のトリガーの、webhook の秘密の文字列をどこで得るか（§3）。
 - 実行環境で arm64 のイメージを作れるか（Podman のエミュレーション。`sudo` が無いので binfmt を入れられない見込み）。
 
 ## 5. 出典
