@@ -2,7 +2,7 @@
 
 OCI の公式のイメージ（Oracle Linux 9）で、小さな VM（E2.1.Micro と A1）を作ったときに分かったこと。
 
-- **確かめた日**: 2026-11-13（実際に VM を作って測った結果と、Oracle の公式文書）
+- **確かめた日**: 2026-11-13・2026-11-15（実際に VM を作って測った結果と、Oracle の公式文書）
 - 「実測」と書いたものは、イメージ `Oracle-Linux-9.8-2026.10.30-0`（amd64）と `Oracle-Linux-9.8-aarch64-2026.10.30-0`（arm64）で測った。イメージや時期が違えば変わりうる。
 
 ## 1. 形（shape）と見えるメモリ
@@ -60,7 +60,7 @@ OCI の公式のイメージ（Oracle Linux 9）で、小さな VM（E2.1.Micro 
 ## 6. A1 の空き
 
 - 「容量の報告」（Compute Capacity Report。`oci compute compute-capacity-report create`）で、指定した形と大きさの VM をいまその可用性ドメインに作れるかを、何も作らずに問い合わせられる。結果は `AVAILABLE` など。その時点の様子で、作れることを約束はしない。
-- 2026-11-13 には、A1 の 1・2・4 OCPU のどれも `AVAILABLE` で、1 OCPU・6 GB の VM が 35 秒で `RUNNING` になった（実測）。A1 は、時期によっては "Out of host capacity" で作れない（[oci-free-tier.md](oci-free-tier.md) §2）。
+- 2026-11-13 には、A1 の 1・2・4 OCPU のどれも `AVAILABLE` で、1 OCPU・6 GB の VM が 35 秒で `RUNNING` になった（実測）。2026-11-14・15 にも、1 OCPU・6 GB の A1 を 2 回作り直せた（実測）。A1 は、時期によっては "Out of host capacity" で作れない（[oci-free-tier.md](oci-free-tier.md) §2）。
 - A1 では、アイドル回収の条件にメモリの使用率も加わる（[oci-free-tier.md](oci-free-tier.md) §5）。
 
 ## 7. 出典

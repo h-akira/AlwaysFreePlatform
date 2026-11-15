@@ -2,7 +2,7 @@
 
 Terraform を OCI の側で実行するサービス。Terraform の構成（`.tf` のファイル一式）を **スタック** として預け、plan・apply・destroy を **ジョブ** として実行する。state も Resource Manager が預かるので、手元に state を置かなくてよい。
 
-- **確かめた日**: 2026-11-09（Oracle の公式文書と、実際にスタックを作って動かした結果）
+- **確かめた日**: 2026-11-09・2026-11-15（Oracle の公式文書と、実際にスタックを作って動かした結果）
 
 ## 1. 要点
 
@@ -28,6 +28,8 @@ Terraform を OCI の側で実行するサービス。Terraform の構成（`.tf
 
 - apply のジョブには、直前の plan のジョブを指定できる（`--execution-plan-strategy FROM_PLAN_JOB_ID --execution-plan-job-id <plan のジョブ>`）。確かめた plan のとおりに適用される。
 - ジョブのログは、ジョブが終わってから `oci resource-manager job get-job-logs-content` でまとめて取れる。
+- destroy のジョブは `--execution-plan-strategy AUTO_APPROVED` で、plan を挟まずに流せる。
+- かかった時間（実測 2026-11-14・15。VCN・Bastion・MySQL HeatWave の Always Free・VM（A1）・Vault のシークレット・バケットなど 23 個のスタック）: 全部を作る apply が約 17 分（大半は HeatWave）、全部を消す destroy が約 5 分、VM だけを置き換える apply が約 3 分。
 - Terraform の版はスタックごとに指定する。`1.5.x` を指定し、プロバイダ `oracle/oci` v9.12.1・`hashicorp/random` v3.9.1 で動いた（実測）。
 
 ## 5. 出典
