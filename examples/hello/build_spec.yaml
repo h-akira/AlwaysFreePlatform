@@ -1,0 +1,31 @@
+# OCI DevOps build of a project on AlwaysFreePlatform (docs/04_using.md §2).
+# Copy this file to the top of the project's repository.
+#
+# Keep env.exportedVariables and the step "release with the platform" as they
+# are: that step puts the tag's source and compose.afp.yaml into the platform's
+# bucket, and the VM builds and deploys them. The project may add its own steps
+# (tests, generated files, ...) before it.
+version: 0.1
+component: build
+timeoutInSeconds: 1200
+shell: bash
+env:
+  exportedVariables:
+    - AFP_TAG
+steps:
+  # - type: Command
+  #   name: my own step
+  #   command: |
+  #     ...
+  - type: Command
+    name: release with the platform
+    command: |
+      set -euo pipefail
+      # The platform's code at the version the VM runs (platform.json).
+      oci os object get -bn "$AFP_BUCKET" --name afp.json --file /tmp/afp.json
+      oci os object get -bn "$AFP_BUCKET" --name platform.json --file /tmp/platform.json
+      repo="$(python3 -c 'import json; print(json.load(open("/tmp/afp.json"))["platform_repository"])')"
+      commit="$(python3 -c 'import json; print(json.load(open("/tmp/platform.json"))["commit"])')"
+      mkdir -p /tmp/afp-platform
+      curl -fsSL "$repo/archive/$commit.tar.gz" | tar -xz -C /tmp/afp-platform --strip-components=1
+      AFP_TAG="$(/tmp/afp-platform/scripts/devops-release.sh)"

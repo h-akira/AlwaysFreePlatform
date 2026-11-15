@@ -165,6 +165,8 @@ resource "oci_devops_deploy_pipeline" "project" {
   }
 }
 
+# afp deploy builds the images on the VM from the source that the build put
+# into the bucket (ADR 026), so the step allows for a build.
 # The tag reaches a shell on the VM. The build checks its form before
 # exporting it (scripts/devops-build.sh) and afp checks it again; the quotes
 # keep anything else from being parsed by the shell.
@@ -183,7 +185,7 @@ resource "oci_devops_deploy_artifact" "spec" {
       steps:
         - stepType: Command
           name: afp deploy
-          timeoutInSeconds: 1200
+          timeoutInSeconds: 1800
           command: sudo -n /opt/afp/current/bin/afp deploy ${each.key} '$${AFP_TAG}'
     EOT
   }
@@ -235,7 +237,9 @@ resource "oci_devops_build_pipeline" "project" {
   }
 }
 
-# Runs the project's build_spec.yaml (from the template in examples/hello).
+# Runs the project's build_spec.yaml (from the template in examples/hello). The
+# runner is x86_64 and cannot emulate arm64, so it only puts the tag's source
+# and compose.afp.yaml into the bucket; the VM builds (ADR 026).
 resource "oci_devops_build_pipeline_stage" "build" {
   for_each                  = local.projects
   build_pipeline_id         = oci_devops_build_pipeline.project[each.key].id
