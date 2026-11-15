@@ -24,6 +24,10 @@ output "db_admin_secret_id" {
   value = module.secrets.db_admin_secret_id
 }
 
+output "github_token_secret_id" {
+  value = module.secrets.github_token_secret_id
+}
+
 output "bucket" {
   value = module.storage.bucket_name
 }

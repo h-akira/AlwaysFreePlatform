@@ -52,6 +52,26 @@ resource "oci_vault_secret" "db_admin_password" {
   }
 }
 
+# GitHub token that OCI DevOps reads the project repositories with; one for
+# the platform. Like the manual secrets: the administrator puts the token in as
+# a new secret version, which Terraform leaves alone.
+resource "oci_vault_secret" "github_token" {
+  compartment_id = var.compartment_id
+  vault_id       = var.vault_id
+  key_id         = var.key_id
+  secret_name    = "afp-github-token-${random_id.suffix.hex}"
+  description    = "GitHub token for OCI DevOps (set the value by hand)"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode("CHANGE_ME")
+  }
+
+  lifecycle {
+    ignore_changes = [secret_content]
+  }
+}
+
 locals {
   projects = { for p in var.projects : p.name => p }
   # "<project>/<NAME>" => {project, name}
@@ -149,4 +169,8 @@ output "db_admin_password" {
 
 output "db_admin_secret_id" {
   value = oci_vault_secret.db_admin_password.id
+}
+
+output "github_token_secret_id" {
+  value = oci_vault_secret.github_token.id
 }
