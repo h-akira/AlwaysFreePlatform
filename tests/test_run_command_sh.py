@@ -99,7 +99,7 @@ def test_send_without_wait_prints_how_to_check(env: dict[str, str], tmp_path: Pa
     assert result.returncode == 0, result.stderr
     assert "make command-result ID=ocid1.instanceagentcommand.oc1..cmd" in result.stdout
     content = json.loads((tmp_path / "content.json").read_text())
-    assert content["source"]["text"].startswith("out=$( { echo hi\n} 2>&1 )")
+    assert "\nout=$( { echo hi\n} 2>&1 )" in content["source"]["text"]
     calls = [json.loads(line) for line in (tmp_path / "oci.log").read_text().splitlines()]
     assert not any("command-execution" in c for c in calls)
     [create] = [c for c in calls if "create" in c and "instance-agent" in c]

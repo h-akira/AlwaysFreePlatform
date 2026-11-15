@@ -75,9 +75,25 @@ def execution_result(execution: dict[str, Any]) -> tuple[str, str, str]:
 OUTPUT_TAIL_BYTES = 900
 
 
-def wrap_script(script: str) -> str:
-    """POSIX sh: run SCRIPT, print the end of its output, keep its exit code."""
+# On a new VM the agent takes commands before the first boot has written
+# /etc/sudoers.d/afp (measured 2026-11-14), so `sudo -n` fails for a few
+# minutes. Wrapped scripts wait for that rule first.
+SUDO_CHECK = "sudo -n -l /usr/local/sbin/afp-bootstrap"
+SUDO_WAIT_TRIES = 60
+SUDO_WAIT_INTERVAL = 10
+
+
+def wrap_script(script: str, *, tries: int = SUDO_WAIT_TRIES, interval: int = SUDO_WAIT_INTERVAL) -> str:
+    """POSIX sh: wait for the sudo rule, run SCRIPT, print the end of its
+    output, keep its exit code."""
     return (
+        "i=0\n"
+        f"until {SUDO_CHECK} > /dev/null 2>&1; do\n"
+        f"  i=$((i + 1)); if [ \"$i\" -ge {tries} ]; then\n"
+        "    echo 'sudo is not allowed for this user yet (is the first boot still running?)'; exit 1\n"
+        "  fi\n"
+        f"  sleep {interval}\n"
+        "done\n"
         f"out=$( {{ {script}\n}} 2>&1 ); rc=$?\n"
         f"printf '%s\\n' \"$out\" | tail -c {OUTPUT_TAIL_BYTES}\n"
         "exit $rc\n"

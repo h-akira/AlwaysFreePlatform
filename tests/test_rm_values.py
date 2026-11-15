@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -102,20 +103,50 @@ def test_execution_result() -> None:
     assert rm_values.execution_result(waiting) == ("ACCEPTED", "-", "")
 
 
-def test_command_content_keeps_the_end_and_the_exit_code() -> None:
+@pytest.fixture
+def sudo_env(tmp_path: Path) -> dict[str, str]:
+    """PATH with a fake sudo that allows `-l` once the file `allowed` exists,
+    and counts its calls."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "sudo"
+    fake.write_text(f'#!/bin/sh\necho x >> "{tmp_path}/calls"\n[ -e "{tmp_path}/allowed" ]\n')
+    fake.chmod(0o755)
+    return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+
+def test_command_content_keeps_the_end_and_the_exit_code(sudo_env: dict[str, str], tmp_path: Path) -> None:
+    (tmp_path / "allowed").touch()
     script = "seq 1 2000; echo \"done $((1+1))\" 'x'; exit 3"
     out = subprocess.run([sys.executable, str(SCRIPT), "command-content", script],
                          capture_output=True, text=True, check=True).stdout
     text = json.loads(out)["source"]["text"]
-    result = subprocess.run(["sh", "-c", text], capture_output=True, text=True)
+    result = subprocess.run(["sh", "-c", text], capture_output=True, text=True, env=sudo_env)
     assert result.returncode == 3
     assert result.stdout.endswith("2000\ndone 2 x\n")
     assert len(result.stdout.encode()) <= rm_values.OUTPUT_TAIL_BYTES
 
 
-def test_wrapped_script_passes_success() -> None:
-    result = subprocess.run(["sh", "-c", rm_values.wrap_script("echo ok >&2")], capture_output=True, text=True)
+def test_wrapped_script_passes_success(sudo_env: dict[str, str], tmp_path: Path) -> None:
+    (tmp_path / "allowed").touch()
+    result = subprocess.run(["sh", "-c", rm_values.wrap_script("echo ok >&2")], capture_output=True, text=True, env=sudo_env)
     assert (result.returncode, result.stdout) == (0, "ok\n")
+
+
+def test_wrapped_script_waits_for_the_sudo_rule(sudo_env: dict[str, str], tmp_path: Path) -> None:
+    # The rule appears while the wrapper waits (written by the 2nd sleep's end).
+    script = rm_values.wrap_script("echo ran", tries=5, interval=0).replace(
+        "  sleep 0\n", f'  sleep 0; [ "$i" -ge 2 ] && touch "{tmp_path}/allowed"\n')
+    result = subprocess.run(["sh", "-c", script], capture_output=True, text=True, env=sudo_env)
+    assert (result.returncode, result.stdout) == (0, "ran\n")
+    assert len((tmp_path / "calls").read_text().splitlines()) == 3
+
+
+def test_wrapped_script_gives_up_without_running(sudo_env: dict[str, str]) -> None:
+    result = subprocess.run(["sh", "-c", rm_values.wrap_script("echo ran", tries=3, interval=0)],
+                            capture_output=True, text=True, env=sudo_env)
+    assert result.returncode == 1
+    assert "ran" not in result.stdout and "first boot" in result.stdout
 
 
 PREFIX = "iad.ocir.io/ns/afp/hello"
