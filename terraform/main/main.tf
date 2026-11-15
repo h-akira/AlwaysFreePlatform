@@ -70,7 +70,7 @@ module "secrets" {
   compartment_id = local.compartment_id
   vault_id       = data.oci_kms_vaults.afp.vaults[0].id
   key_id         = data.oci_kms_keys.afp.keys[0].id
-  projects       = [for p in var.projects : { name = p.name, secrets = p.secrets }]
+  projects       = [for p in var.projects : { name = p.name, pipeline = p.repository != null, secrets = p.secrets }]
 }
 
 module "network" {
@@ -155,4 +155,21 @@ module "vm" {
     module.policies.policy_id,
     module.storage.afp_json_id,
   ]
+}
+
+# Pipelines only for the projects with a repository; the others are deployed
+# from the administrator's machine (make deploy).
+module "devops" {
+  source                 = "../modules/devops"
+  tenancy_ocid           = var.tenancy_ocid
+  compartment_id         = local.compartment_id
+  compartment_name       = local.compartment_name
+  bucket_name            = local.bucket_name
+  github_token_secret_id = module.secrets.github_token_secret_id
+  notification_email     = var.notification_email
+  vm_instance_id         = module.vm.instance_id
+  projects = [for p in var.projects : {
+    name       = p.name
+    repository = p.repository
+  } if p.repository != null]
 }

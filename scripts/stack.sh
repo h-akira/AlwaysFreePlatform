@@ -7,10 +7,14 @@
 #
 #   plan     Upload terraform/ at HEAD and the variables, then run a plan job.
 #   apply    Apply exactly the latest plan job, if it was made from HEAD.
-#            For the main stack, then sends afp-bootstrap to the VM through
-#            Run Command (without waiting), so that the VM picks up afp.json.
+#            For the main stack, also brings the GitHub triggers of OCI DevOps
+#            in line with the projects (scripts/triggers.py: those of projects
+#            without a repository are deleted first, missing ones are created
+#            after), then sends afp-bootstrap to the VM through Run Command
+#            (without waiting), so that the VM picks up afp.json.
 #   destroy  Destroy every resource of the main stack (the stack itself is kept).
-#            Empties the bucket first, dumps included. Asks to type the stack
+#            Deletes the GitHub triggers and empties the bucket first, dumps
+#            included. Asks to type the stack
 #            name, or needs AFP_CONFIRM_DESTROY=<name>. Refused for the base stack.
 #   outputs  Print the stack's outputs as KEY=VALUE lines.
 #
@@ -29,6 +33,7 @@ REFRESH_SECONDS=600
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY=(python3 "$ROOT/scripts/rm_values.py")
+TRIGGERS=(python3 "$ROOT/scripts/triggers.py")
 
 die() { echo "stack.sh: $*" >&2; exit 1; }
 # Print the header comment (up to the first non-comment line).
@@ -175,11 +180,17 @@ cmd_apply() {
   [[ "$name" == "plan-$sha" ]] \
     || die "latest plan ($name) is not of HEAD ($sha); run 'make ${MAKE_PREFIX}plan'"
 
+  if [[ "$WORKDIR" == "main" ]]; then
+    # A trigger left on a build pipeline that is going away may block its deletion.
+    stack_outputs "$stack_id" | "${TRIGGERS[@]}" prune || die "cannot delete the triggers of removed pipelines"
+  fi
   echo "Applying $name ..."
   run_job create-apply-job --stack-id "$stack_id" --display-name "apply-$sha" \
     --execution-plan-strategy FROM_PLAN_JOB_ID --execution-plan-job-id "$plan_id"
   echo "Applied $sha. Commit the platform/ pointer in the config repository."
   if [[ "$WORKDIR" == "main" ]]; then
+    stack_outputs "$stack_id" | "${TRIGGERS[@]}" create \
+      || die "the stack is applied but the triggers are not; run 'make plan' and 'make apply' again"
     # A new VM runs it by itself at boot; then this one only waits its turn.
     "$ROOT/scripts/run-command.sh" send "sudo -n /usr/local/sbin/afp-bootstrap" \
       || echo "stack.sh: warning: could not send afp-bootstrap to the VM" >&2
@@ -215,6 +226,8 @@ cmd_destroy() {
     [[ "$answer" == "$STACK_NAME" ]] || die "aborted"
   fi
 
+  # Terraform does not know the triggers; they keep the DevOps project alive.
+  stack_outputs "$stack_id" | "${TRIGGERS[@]}" delete-all || die "cannot delete the triggers"
   empty_bucket "$stack_id"
   echo "Destroying ..."
   run_job create-destroy-job --stack-id "$stack_id" --display-name "destroy-$(head_sha)" \

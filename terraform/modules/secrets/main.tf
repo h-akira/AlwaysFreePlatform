@@ -10,10 +10,11 @@ variable "key_id" {
   type = string
 }
 
-# var.projects of the main stack.
+# var.projects of the main stack; pipeline is true when it has a repository.
 variable "projects" {
   type = list(object({
-    name = string
+    name     = string
+    pipeline = bool
     secrets = list(object({
       name = string
       how  = string
@@ -81,6 +82,7 @@ locals {
   manual = merge([for p in var.projects : {
     for s in p.secrets : "${p.name}/${s.name}" => { project = p.name, name = s.name } if s.how == "manual"
   }]...)
+  pipelines = { for p in var.projects : p.name => p if p.pipeline }
 }
 
 # Same rules as the administrator's password (ADR 011).
@@ -152,6 +154,40 @@ resource "oci_vault_secret" "manual" {
   lifecycle {
     ignore_changes = [secret_content]
   }
+}
+
+resource "random_id" "webhook" {
+  for_each    = local.pipelines
+  byte_length = 4
+}
+
+# Webhook secret of the project's GitHub trigger. The API returns it only when
+# the trigger is created; scripts/triggers.py then puts it in as a new secret
+# version, which Terraform leaves alone. The administrator copies it from here
+# into the GitHub webhook.
+resource "oci_vault_secret" "webhook" {
+  for_each       = local.pipelines
+  compartment_id = var.compartment_id
+  vault_id       = var.vault_id
+  key_id         = var.key_id
+  secret_name    = "afp-${each.key}-webhook-${random_id.webhook[each.key].hex}"
+  description    = "AlwaysFreePlatform project ${each.key}: webhook secret of its GitHub trigger (set by make apply)"
+
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode("CHANGE_ME")
+  }
+
+  lifecycle {
+    ignore_changes = [secret_content]
+  }
+}
+
+output "webhook_secrets" {
+  value = { for name, _ in local.pipelines : name => {
+    id   = oci_vault_secret.webhook[name].id
+    name = oci_vault_secret.webhook[name].secret_name
+  } }
 }
 
 # Per project: the JSON secret and the manual secrets by name.

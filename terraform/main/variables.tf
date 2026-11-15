@@ -104,19 +104,31 @@ variable "vm_generation" {
   default     = 1
 }
 
+variable "notification_email" {
+  description = "Email address that receives the DevOps build and deployment notifications. OCI sends it a mail to confirm the subscription."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.notification_email))
+    error_message = "notification_email must be an email address."
+  }
+}
+
 variable "projects" {
   description = <<-EOT
     Projects hosted on the platform (docs/04_using.md §1). Each item:
       name        lower-case letters, digits and hyphens; not "caddy", not starting with "afp".
                   The DB and its user are named after it with "-" replaced by "_".
-      repository  GitHub repository of the project.
+      repository  Optional. GitHub repository (https://github.com/<owner>/<repo>). When set,
+                  make apply creates the project's build and deployment pipelines and its
+                  GitHub trigger; without it, the project is deployed with make deploy.
       domain      Domain name served by Caddy for the project.
       vm          VM to run on; only "main" for now.
       secrets     [{name, how}]: name in upper case (not AFP_*), how is "generate" or "manual".
   EOT
   type = list(object({
     name       = string
-    repository = string
+    repository = optional(string)
     domain     = string
     vm         = string
     secrets = optional(list(object({
@@ -141,6 +153,11 @@ variable "projects" {
   validation {
     condition     = length(distinct([for p in var.projects : lower(p.domain)])) == length(var.projects) && alltrue([for p in var.projects : can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", lower(p.domain)))])
     error_message = "projects[*].domain must be a valid domain name, unique among the projects."
+  }
+
+  validation {
+    condition     = alltrue([for p in var.projects : p.repository == null ? true : can(regex("^https://github\\.com/[^/]+/[^/]+$", p.repository))])
+    error_message = "projects[*].repository must look like https://github.com/<owner>/<repo> (no .git, no trailing slash), or be left out."
   }
 
   validation {

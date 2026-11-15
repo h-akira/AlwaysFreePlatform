@@ -51,3 +51,21 @@ output "vm_public_ip" {
 output "vm_arch" {
   value = module.vm.arch
 }
+
+output "devops_project_id" {
+  value = module.devops.project_id
+}
+
+output "devops_connection_id" {
+  value = module.devops.connection_id
+}
+
+# Read by scripts/triggers.py: {project: {build_pipeline_id, webhook_secret_id,
+# webhook_secret_name}} for the projects with a repository.
+output "pipelines" {
+  value = { for name, id in module.devops.build_pipeline_ids : name => {
+    build_pipeline_id   = id
+    webhook_secret_id   = module.secrets.webhook_secrets[name].id
+    webhook_secret_name = module.secrets.webhook_secrets[name].name
+  } }
+}
