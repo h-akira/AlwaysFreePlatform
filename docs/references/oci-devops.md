@@ -39,6 +39,12 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - **Terraform で作ると Secret は得られない**: プロバイダ 9.12.1 は、作成の応答から ID だけを取り、取得の API で読み直して state に書く（[devops_trigger_resource.go](https://github.com/oracle/terraform-provider-oci/blob/master/internal/service/devops/devops_trigger_resource.go)）。要望の issue [#1681](https://github.com/oracle/terraform-provider-oci/issues/1681) は 2022-10 から開いたまま（2026-11-15）。
 - CLI の `create-github-trigger` は、作成の応答を出力する。`--wait-for-state` を付けると、出力は作業の進み具合（work request）になる（CLI の `--help`。Secret が出なくなる見込み。未確認）。
 - **ビルドの実行環境**（build runner）: Oracle Linux 8 のコンテナ。入っている道具に OCI CLI 3.58.1・Git 2.48.1・Python 3.11.11・**Podman 4.9.4**（Docker でなく）がある。版は変わりうる（[Build Runner Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/runtime_details.htm)）。`sudo` は使えない（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
+- **実行環境を動かして調べた結果**（2026-11-15。イメージ `OL8_X86_64_STANDARD_10`・既定の大きさ）:
+  - CPU は `x86_64`。OS は Oracle Linux 8.10。手順は root（uid 0）で動き、Podman 4.9.4 も root で動く（rootless でない）。
+  - arm64 のエミュレーションは使えない: `/proc/sys/fs/binfmt_misc` は空で、qemu を登録しようとすると（`podman run --privileged docker.io/tonistiigi/binfmt --install arm64`）「cannot mount binfmt_misc filesystem」「operation not permitted」。arm64 のコンテナは `Exec format error` で動かない。
+  - ビルドのパイプラインのパラメータは、手順の環境変数として届く。手で始めた実行では、`OCI_TRIGGER_*` は空。
+  - 手で始めた実行で、`build_spec.yaml` を読んでから最後の手順が終わるまで、約 2 分 15 秒（イメージの pull を 2 回含む）。
+- デプロイのパイプラインの Shell の段（コンテナ・インスタンスでコマンドを動かす）に入っている道具は、bash・Git・OCI CLI・kubectl・Terraform・Helm・JDK・Python・SQLcl。Podman・Docker は無い。形を選べるが、arm64 の形を選べるかの記述は無い（[Shell Container Image Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/shellruntime_details.htm)・[Adding a Shell Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/shell_stage.htm)）。
 - 実行環境の大きさは、既定が 2 OCPU・8 GB。変えられるが、用意に時間がかかる。**CPU の種類（arm64 が選べるか）の記述は無い**（[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)）。
 - **料金**: 「ビルドの間に使った実行環境（OCPU とメモリ）の分を課金する」（同上）。単価は確かめていない。
 - ビルドの手順のファイル（`build_spec.yaml`）の `outputArtifacts` に `DOCKER_IMAGE` を書くと、手順の中で作ったイメージを成果物として次の段に渡す。`env.exportedVariables` の値は、同じパイプラインのあとの段で使える（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
@@ -49,7 +55,6 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - インスタンス・グループへのデプロイに料金がかかるか。
 - GitHub のタグの push でトリガーが動くか（§3）。
 - classic のトークン（`repo`）で、非公開のリポジトリを読めるか（§3）。
-- 実行環境で arm64 のイメージを作れるか（Podman のエミュレーション。`sudo` が無いので binfmt を入れられない見込み）。
 
 ## 5. 出典
 

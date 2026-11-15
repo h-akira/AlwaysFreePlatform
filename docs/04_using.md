@@ -58,7 +58,9 @@ networks:
 ```
 
 - `AFP_TAG` は、デプロイする版の名前。プロジェクトが push したタグの名前そのもの。
-- いまのビルドとデプロイは、基盤の管理者が手元から行う（`make deploy`）。タグの push で DevOps が行うようにしたとき、プロジェクトが書くもの（DevOps の `build_spec.yaml` など）が増えるかは未決。
+- リポジトリを基盤に伝えたプロジェクトは、さらに **`build_spec.yaml`**（OCI DevOps のビルドの手順）を、リポジトリの一番上に置く。基盤のリポジトリの `examples/hello/build_spec.yaml` を写し、`AFP_TAG` の指定と「release with the platform」の手順は変えない。その前に、自分の手順（テストなど）を足してよい。
+  - `v` で始まるタグを push すると、ビルドとデプロイが動く。ビルドは基盤の VM の上で行われる。
+- リポジトリを伝えないプロジェクトは、基盤の管理者が手元からデプロイする（`make deploy`）。
 - 動く見本は、基盤のリポジトリの `examples/hello` に置く。
 
 ## 3. 基盤が渡す値
