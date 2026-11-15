@@ -121,6 +121,8 @@ module "storage" {
       admin_secret_id = module.secrets.db_admin_secret_id
     }
     image_prefix_base = "${lower(data.oci_identity_regions.this.regions[0].key)}.ocir.io/${data.oci_objectstorage_namespace.this.namespace}/afp"
+    # Where afp creates OCIR repositories when it builds on the VM.
+    compartment_id = local.compartment_id
     projects = [for p in var.projects : {
       name              = p.name
       domain            = lower(p.domain)

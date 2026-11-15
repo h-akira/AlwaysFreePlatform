@@ -52,6 +52,9 @@ class Config:
     db: Db
     image_prefix_base: str
     projects: list[Project]
+    # OCIR repositories are created here when the VM builds (older afp.json
+    # files lack it).
+    compartment_id: str | None = None
 
 
 def _str(data: dict[str, Any], key: str, where: str) -> str:
@@ -108,4 +111,5 @@ def parse(text: str) -> Config:
         db=Db(host=host, port=port, admin_user=_str(db, "admin_user", "db."), admin_secret_id=_str(db, "admin_secret_id", "db.")),
         image_prefix_base=_str(data, "image_prefix_base", ""),
         projects=projects,
+        compartment_id=data.get("compartment_id") if isinstance(data.get("compartment_id"), str) else None,
     )

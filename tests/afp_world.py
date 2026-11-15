@@ -37,6 +37,7 @@ def afp_json(projects: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "platform_repository": "https://github.com/example/platform",
         "db": {"host": "10.0.1.10", "port": 3306, "admin_user": "afpadmin", "admin_secret_id": "ocid1.vaultsecret.oc1..admin"},
         "image_prefix_base": "iad.ocir.io/ns/afp",
+        "compartment_id": "ocid1.compartment.oc1..afp",
         "projects": projects
         if projects is not None
         else [
@@ -60,12 +61,29 @@ class World:
             "ocid1.vaultsecret.oc1..appa": json.dumps({"AFP_DB_PASSWORD": DB_PASSWORD, "SIGNING_KEY": SIGNING_KEY}),
             "ocid1.vaultsecret.oc1..apikey": API_KEY,
         }
+        self.files: dict[str, bytes] = {}  # binary objects (source archives)
+        self.repositories: set[str] = set()  # OCIR repositories
+        self.pushed: list[tuple[str, str, list[str]]] = []  # (project, tag, services)
+        self.compose_config: dict[str, Any] | None = None  # answer of `docker compose config`
         self.running: dict[str, str] = {}  # compose project -> tag
         self.broken: set[str] = set()
+        self.broken_build: set[str] = set()  # tags whose build fails
         self.calls: list[dict[str, Any]] = []
 
     def release(self, project: str, tag: str) -> None:
         self.objects[f"releases/{project}/{tag}/compose.afp.yaml"] = f"# {project} {tag}\n"
+
+    def source(self, project: str, tag: str, files: dict[str, str] | None = None) -> None:
+        """Put the tag's source archive, as the DevOps build does."""
+        import tarfile as _tarfile
+        buf = io.BytesIO()
+        with _tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for name, text in (files or {"compose.afp.yaml": "services: {}\n", "app.py": "print(1)\n"}).items():
+                data = text.encode()
+                info = _tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+        self.files[f"releases/{project}/{tag}/source.tar.gz"] = buf.getvalue()
 
     def state(self, project: str) -> dict[str, Any] | None:
         text = self.objects.get(f"state/{project}.json")
@@ -86,6 +104,18 @@ class World:
     def _answer(self, args: list[str], env: dict[str, str], stdout_path: Path | None) -> tuple[int, str, str]:
         line = " ".join(args)
         if args[0] == "oci":
+            if "os object get" in line and args[args.index("--file") + 1] != "-":
+                name = args[args.index("--name") + 1]
+                if name in self.files:
+                    Path(args[args.index("--file") + 1]).write_bytes(self.files[name])
+                    return 0, "", ""
+                return 1, "", '{\n    "status": 404,\n}'
+            if "artifacts container repository list" in line:
+                name = args[args.index("--display-name") + 1]
+                return 0, "1" if name in self.repositories else "0", ""
+            if "artifacts container repository create" in line:
+                self.repositories.add(args[args.index("--display-name") + 1])
+                return 0, "", ""
             if "os object get" in line:
                 name = args[args.index("--name") + 1]
                 if name in self.objects:
@@ -107,6 +137,21 @@ class World:
             if "ls" in args:
                 return 0, json.dumps([{"Name": n} for n in sorted(self.running)]), ""
             if "pull" in args:
+                return 0, "", ""
+            if "config" in args:
+                prefix = env["AFP_IMAGE_PREFIX"]
+                config = self.compose_config or {"services": {
+                    "web": {"build": {"context": "."}, "image": f"{prefix}/web:{env['AFP_TAG']}"},
+                    "redis": {"image": "redis:7"},
+                }}
+                return 0, json.dumps(config), ""
+            if "build" in args:
+                if env["AFP_TAG"] in self.broken_build:
+                    return 1, "", "failed to solve: process did not complete successfully"
+                return 0, "", ""
+            if "push" in args:
+                names = [a for a in args[args.index("push") + 1:] if not a.startswith("-")]
+                self.pushed.append((project or "", env["AFP_TAG"], names))
                 return 0, "", ""
             if "up" in args:
                 if project == "afp-caddy":

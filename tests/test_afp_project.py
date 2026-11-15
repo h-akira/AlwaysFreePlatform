@@ -167,3 +167,109 @@ def test_example_follows_the_contract() -> None:
     assert 'aliases: ["${AFP_PROJECT}"]' in text and "external: true" in text
     assert "healthcheck:" in text and "mem_limit:" in text
     assert "8080" in (root / "examples" / "hello" / "app.py").read_text()
+
+
+# --- building on the VM (ADR 026) ----------------------------------------------
+
+
+def test_deploy_builds_and_pushes_when_the_release_has_source(tmp_path: Path) -> None:
+    world = World()
+    world.source("hello", "v1")
+    summary = deploy(world, tmp_path, "hello", "v1")
+    assert summary.startswith("hello is now v1")
+    assert world.repositories == {"afp/hello/web"}  # only the service with build:
+    assert world.pushed == [("hello", "v1", ["web"])]
+    names = [" ".join(c["args"]) for c in world.calls]
+    build = next(i for i, n in enumerate(names) if n.startswith("docker compose -p hello") and " build " in f"{n} ")
+    dump = next(i for i, n in enumerate(names) if "mysqldump" in n)
+    assert build < dump  # a failed build must not leave a dump or touch the running version
+    # The source tree and the archive are cleaned up.
+    assert not (tmp_path / "projects" / "hello" / "v1" / "src").exists()
+    assert not list((tmp_path / "work").glob("*source*"))
+
+
+def test_deploy_without_source_does_not_build(tmp_path: Path) -> None:
+    world = World()
+    deploy(world, tmp_path, "hello", "v1")
+    assert world.pushed == []
+    assert not any("build" in c["args"] for c in world.calls if c["args"][:2] == ["docker", "compose"])
+
+
+def test_failed_build_changes_nothing(tmp_path: Path) -> None:
+    world = World()
+    deploy(world, tmp_path, "hello", "v1")
+    world.source("hello", "v2")
+    world.broken_build.add("v2")
+    with pytest.raises(AfpError, match="failed"):
+        deploy(world, tmp_path, "hello", "v2")
+    assert world.running == {"hello": "v1"}
+    assert world.state("hello") == {"current": "v1", "previous": None}
+    assert not any(k.endswith("-before-v2.sql.gz") for k in world.objects)
+
+
+def test_rollback_does_not_build(tmp_path: Path) -> None:
+    world = World()
+    world.source("hello", "v1")
+    deploy(world, tmp_path, "hello", "v1")
+    deploy(world, tmp_path, "hello", "v2")
+    world.pushed.clear()
+    cli.cmd_rollback(make_ctx(tmp_path, world), argparse.Namespace(project="hello"))
+    assert world.running == {"hello": "v1"}
+    assert world.pushed == []
+
+
+def test_build_refuses_images_outside_the_prefix(tmp_path: Path) -> None:
+    world = World()
+    world.source("hello", "v1")
+    world.compose_config = {"services": {"web": {"build": {"context": "."}, "image": "docker.io/someone/web:v1"}}}
+    with pytest.raises(AfpError, match="AFP_IMAGE_PREFIX"):
+        deploy(world, tmp_path, "hello", "v1")
+    assert world.pushed == [] and world.running == {}
+
+
+@pytest.mark.parametrize("bad", ["../escape.txt", "/abs.txt"])
+def test_source_with_escaping_paths_is_refused(tmp_path: Path, bad: str) -> None:
+    world = World()
+    world.source("hello", "v1", {"compose.afp.yaml": "services: {}\n", bad: "x"})
+    with pytest.raises(AfpError, match="not allowed"):
+        deploy(world, tmp_path, "hello", "v1")
+    assert not (tmp_path / "escape.txt").exists()
+
+
+def test_source_with_a_symlink_is_refused(tmp_path: Path) -> None:
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        link = tarfile.TarInfo("link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "/etc/passwd"
+        tar.addfile(link)
+    world = World()
+    world.files["releases/hello/v1/source.tar.gz"] = buf.getvalue()
+    with pytest.raises(AfpError, match="not allowed"):
+        deploy(world, tmp_path, "hello", "v1")
+
+
+def test_build_needs_the_compartment(tmp_path: Path) -> None:
+    from afp_world import afp_json
+
+    data = afp_json()
+    del data["compartment_id"]
+    world = World(data)
+    world.source("hello", "v1")
+    with pytest.raises(AfpError, match="compartment_id"):
+        deploy(world, tmp_path, "hello", "v1")
+
+
+def test_build_services() -> None:
+    prefix = "iad.ocir.io/ns/afp/app-a"
+    config = {"services": {
+        "web": {"build": {"context": "."}, "image": f"{prefix}/web:v3"},
+        "worker": {"build": {"context": "w"}, "image": f"{prefix}/worker:v3"},
+        "db": {"image": "mysql:8"},
+    }}
+    assert pm.build_services(config, prefix) == [("web", "afp/app-a/web"), ("worker", "afp/app-a/worker")]
+    with pytest.raises(AfpError, match="nothing to build"):
+        pm.build_services({"services": {"db": {"image": "mysql:8"}}}, prefix)

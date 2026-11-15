@@ -62,6 +62,18 @@ class Oci:
             return None
         raise AfpError(f"cannot read {name} from bucket {bucket}: {result.stderr.strip()[-300:]}")
 
+    def download_object(self, bucket: str, name: str, path: Path) -> bool:
+        """Save an object (binary too) to path; False when it does not exist."""
+        result = self.runner.run(
+            self._cmd("os", "object", "get", *self._ns(), "-bn", bucket, "--name", name, "--file", str(path)),
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+        if NOT_FOUND.search(result.stderr):
+            return False
+        raise AfpError(f"cannot read {name} from bucket {bucket}: {result.stderr.strip()[-300:]}")
+
     def put_object(self, bucket: str, name: str, path: Path, content_type: str, quiet: bool = False) -> None:
         self.runner.run(
             self._cmd(
@@ -84,6 +96,24 @@ class Oci:
             return base64.b64decode(result.stdout.strip(), validate=True).decode()
         except ValueError as e:
             raise AfpError(f"secret {secret_id} is not base64 text") from e
+
+    def ensure_repository(self, compartment_id: str, name: str) -> None:
+        """Create the private OCIR repository name (e.g. afp/hello/web) if missing."""
+        result = self.runner.run(
+            self._cmd(
+                "artifacts", "container", "repository", "list", "--compartment-id", compartment_id,
+                "--display-name", name, "--query", "length(data.items)", "--raw-output",
+            ),
+            quiet=True,
+        )
+        if result.stdout.strip() == "0":
+            self.runner.run(
+                self._cmd(
+                    "artifacts", "container", "repository", "create", "--compartment-id", compartment_id,
+                    "--display-name", name, "--is-public", "false",
+                ),
+                quiet=True,
+            )
 
     def registry_token(self, registry: str) -> str:
         """Short-lived (1 hour) OCIR token for docker login -u BEARER_TOKEN."""

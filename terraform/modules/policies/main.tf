@@ -36,7 +36,9 @@ resource "oci_identity_policy" "vm" {
     "Allow dynamic-group ${local.dg} to read secret-bundles in compartment ${local.c}",
     "Allow dynamic-group ${local.dg} to read buckets in compartment ${local.c} where target.bucket.name = '${var.bucket_name}'",
     "Allow dynamic-group ${local.dg} to manage objects in compartment ${local.c} where target.bucket.name = '${var.bucket_name}'",
-    "Allow dynamic-group ${local.dg} to read repos in compartment ${local.c}",
+    # Pull images; afp deploy also builds on the VM and pushes, creating the
+    # repositories it needs (ADR 026).
+    "Allow dynamic-group ${local.dg} to manage repos in compartment ${local.c}",
     # Run Command: each instance receives only the commands sent to itself.
     "Allow dynamic-group ${local.dg} to use instance-agent-command-execution-family in compartment ${local.c} where request.instance.id = target.instance.id",
   ]
