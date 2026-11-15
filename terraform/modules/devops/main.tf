@@ -155,7 +155,7 @@ resource "oci_devops_deploy_pipeline" "project" {
   for_each     = local.projects
   project_id   = oci_devops_project.afp.id
   display_name = "afp-${each.key}-deploy"
-  description  = "Run afp deploy ${each.key} <tag> on the VM"
+  description  = "Run afp deploy for ${each.key} on the VM, with the tag as AFP_TAG"
 
   deploy_pipeline_parameters {
     items {
