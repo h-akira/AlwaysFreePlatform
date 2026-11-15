@@ -1,8 +1,8 @@
-# OCI DevOps: VM へのデプロイ
+# OCI DevOps: ビルドと VM へのデプロイ
 
-OCI DevOps は、ビルドとデプロイのパイプラインを動かすサービス。AWS の CodePipeline・CodeBuild・CodeDeploy を 1 つにしたものに当たる。ここでは、Compute の VM にデプロイする仕組みをまとめる。
+OCI DevOps は、ビルドとデプロイのパイプラインを動かすサービス。AWS の CodePipeline・CodeBuild・CodeDeploy を 1 つにしたものに当たる。ここでは、ビルドの段と、Compute の VM にデプロイする仕組みをまとめる。
 
-- **確かめた日**: 2026-11-10（Oracle の公式文書。まだ動かしていない）
+- **確かめた日**: 2026-11-10・2026-11-15（Oracle の公式文書。まだ動かしていない）
 
 ## 1. 仕組み
 
@@ -24,13 +24,24 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - 権限: デプロイのパイプラインに、VM でコマンドを実行させる IAM の権限が要る。
 - Run Command そのものの制限（同時に動くのは既定で 2 つ・受け取って残せるのは 5 つまで）と、命令を取りに来る間隔（既定で約 4 分）は [oci-run-command.md](oci-run-command.md)。インスタンス・グループへのデプロイでも同じ間隔で待つのかは未確認。
 
-## 3. 未確認
+## 3. ビルドの段とトリガー
+
+- **トリガーの出来事**（GitHub などの外のリポジトリ）: Push・Pull Request Created・Updated・Merged・Reopened。Push では、ブランチの名前と、含める・除くファイルの glob で絞れる。**タグの push を出来事として選べる・タグの名前で絞れるという記述は無い**（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。
+- **ビルドの実行環境**（build runner）: Oracle Linux 8 のコンテナ。入っている道具に OCI CLI 3.58.1・Git 2.48.1・Python 3.11.11・**Podman 4.9.4**（Docker でなく）がある。版は変わりうる（[Build Runner Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/runtime_details.htm)）。`sudo` は使えない（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
+- 実行環境の大きさは、既定が 2 OCPU・8 GB。変えられるが、用意に時間がかかる。**CPU の種類（arm64 が選べるか）の記述は無い**（[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)）。
+- **料金**: 「ビルドの間に使った実行環境（OCPU とメモリ）の分を課金する」（同上）。単価は確かめていない。
+- ビルドの手順のファイル（`build_spec.yaml`）の `outputArtifacts` に `DOCKER_IMAGE` を書くと、手順の中で作ったイメージを成果物として次の段に渡す。`env.exportedVariables` の値は、同じパイプラインのあとの段で使える（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
+
+## 4. 未確認
 
 - 成果物を Artifact Registry に置かず、デプロイの構成のファイルだけを inline で書いて動くか（コマンドが自分で成果物を取りに行く形）。
 - インスタンス・グループへのデプロイに料金がかかるか。
+- GitHub のタグの push でトリガーが動くか（§3）。
+- 実行環境で arm64 のイメージを作れるか（Podman のエミュレーション。`sudo` が無いので binfmt を入れられない見込み）。
 
-## 4. 出典
+## 5. 出典
 
 - [Deploying to an Instance Group](https://docs.oracle.com/en-us/iaas/Content/devops/using/deploy_instancegroups.htm)（対応する OS・プラグイン・成果物）
 - [Deployment Configuration File](https://docs.oracle.com/en-us/iaas/Content/devops/using/deployment_specs.htm)（構成のファイルの書き方・`ocarun`・`set -e`）
+- [Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)・[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)・[Build Runner Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/runtime_details.htm)・[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)（ビルドとトリガー）
 - [Running Commands on an Instance](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/runningcommands.htm)（Run Command）
