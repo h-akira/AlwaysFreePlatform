@@ -27,6 +27,8 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 ## 3. ビルドの段とトリガー
 
 - **トリガーの出来事**（GitHub などの外のリポジトリ）: Push・Pull Request Created・Updated・Merged・Reopened。Push では、ブランチの名前と、含める・除くファイルの glob で絞れる。**タグの push を出来事として選べる・タグの名前で絞れるという記述は無い**（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。
+- **GitHub への接続**: GitHub の Personal Access Token を Vault のシークレットに入れ、接続はそのシークレットを指す。文書の手順は classic のトークンで、非公開のリポジトリを読むには「Full control of private repositories」（`repo`）を付けるとされる。fine-grained のトークンの記述は無い（[Build Source Integration](https://docs.oracle.com/en-us/iaas/Content/devops/using/getting_started.htm)）。
+- **webhook**: GitHub のトリガーは、GitHub の側に webhook と秘密の文字列を設定しなければならない。中身の形式は `application/json`。トリガーの URL と秘密の文字列は、コンソールでトリガーを作ったときに一度だけ表示され、あとから取り出せない（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。Terraform の `oci_devops_trigger` が出す属性は `trigger_url` までで、秘密の文字列は無い（[プロバイダの文書](https://registry.terraform.io/providers/oracle/oci/latest/docs/resources/devops_trigger)。2026-11-15）。
 - **ビルドの実行環境**（build runner）: Oracle Linux 8 のコンテナ。入っている道具に OCI CLI 3.58.1・Git 2.48.1・Python 3.11.11・**Podman 4.9.4**（Docker でなく）がある。版は変わりうる（[Build Runner Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/runtime_details.htm)）。`sudo` は使えない（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
 - 実行環境の大きさは、既定が 2 OCPU・8 GB。変えられるが、用意に時間がかかる。**CPU の種類（arm64 が選べるか）の記述は無い**（[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)）。
 - **料金**: 「ビルドの間に使った実行環境（OCPU とメモリ）の分を課金する」（同上）。単価は確かめていない。
@@ -37,6 +39,8 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - 成果物を Artifact Registry に置かず、デプロイの構成のファイルだけを inline で書いて動くか（コマンドが自分で成果物を取りに行く形）。
 - インスタンス・グループへのデプロイに料金がかかるか。
 - GitHub のタグの push でトリガーが動くか（§3）。
+- fine-grained のトークン（対象のリポジトリだけ・Contents の読み取りだけ）で、非公開のリポジトリを読めるか（§3）。
+- Terraform で作った GitHub のトリガーの、webhook の秘密の文字列をどこで得るか（§3）。
 - 実行環境で arm64 のイメージを作れるか（Podman のエミュレーション。`sudo` が無いので binfmt を入れられない見込み）。
 
 ## 5. 出典
@@ -44,4 +48,5 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - [Deploying to an Instance Group](https://docs.oracle.com/en-us/iaas/Content/devops/using/deploy_instancegroups.htm)（対応する OS・プラグイン・成果物）
 - [Deployment Configuration File](https://docs.oracle.com/en-us/iaas/Content/devops/using/deployment_specs.htm)（構成のファイルの書き方・`ocarun`・`set -e`）
 - [Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)・[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)・[Build Runner Runtime Details](https://docs.oracle.com/en-us/iaas/Content/devops/using/runtime_details.htm)・[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)（ビルドとトリガー）
+- [Build Source Integration](https://docs.oracle.com/en-us/iaas/Content/devops/using/getting_started.htm)（GitHub のトークンと Vault）
 - [Running Commands on an Instance](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/runningcommands.htm)（Run Command）
