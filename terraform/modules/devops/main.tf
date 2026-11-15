@@ -204,10 +204,10 @@ resource "oci_devops_deploy_stage" "project" {
     }
   }
 
+  # One VM, so one batch; the delay between batches (1 to 3599 s) never applies.
   rollout_policy {
-    policy_type            = "COMPUTE_INSTANCE_GROUP_LINEAR_ROLLOUT_POLICY_BY_COUNT"
-    batch_count            = 1
-    batch_delay_in_seconds = 0
+    policy_type = "COMPUTE_INSTANCE_GROUP_LINEAR_ROLLOUT_POLICY_BY_COUNT"
+    batch_count = 1
   }
 
   rollback_policy {
