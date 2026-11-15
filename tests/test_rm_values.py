@@ -73,8 +73,34 @@ def test_cli_get_and_variables(tmp_path: Path) -> None:
     missing = subprocess.run([sys.executable, SCRIPT, "get", path, "nope"], capture_output=True, text=True)
     assert missing.returncode == 1
 
-    variables = subprocess.run([sys.executable, SCRIPT, "variables", path], capture_output=True, text=True, check=True)
-    assert json.loads(variables.stdout) == {"region": "us-ashburn-1", "home_cidrs": '["192.0.2.10/32"]'}
+    env = {**os.environ, "AFP_NOTIFICATION_EMAIL": "admin@example.com"}
+    variables = subprocess.run([sys.executable, SCRIPT, "variables", path], capture_output=True, text=True, check=True, env=env)
+    assert json.loads(variables.stdout) == {
+        "region": "us-ashburn-1",
+        "home_cidrs": '["192.0.2.10/32"]',
+        "notification_email": "admin@example.com",
+    }
+
+
+def test_cli_variables_need_the_email_from_the_environment(tmp_path: Path) -> None:
+    path = tmp_path / "terraform.tfvars.json"
+    path.write_text(json.dumps({"region": "us-ashburn-1"}))
+    env = {k: v for k, v in os.environ.items() if k != "AFP_NOTIFICATION_EMAIL"}
+    missing = subprocess.run([sys.executable, SCRIPT, "variables", path], capture_output=True, text=True, env=env)
+    assert missing.returncode == 1
+    assert "AFP_NOTIFICATION_EMAIL is not set" in missing.stderr
+
+    # Not in the file, which is kept in git, even when the environment has it.
+    path.write_text(json.dumps({"region": "us-ashburn-1", "notification_email": "admin@example.com"}))
+    env["AFP_NOTIFICATION_EMAIL"] = "admin@example.com"
+    in_file = subprocess.run([sys.executable, SCRIPT, "variables", path], capture_output=True, text=True, env=env)
+    assert in_file.returncode == 1
+    assert "must not be in the tfvars file" in in_file.stderr
+    assert "admin@example.com" not in in_file.stderr
+
+    # The base stack selects its keys and needs no email.
+    only = subprocess.run([sys.executable, SCRIPT, "variables", path, "region"], capture_output=True, text=True, env=env, check=True)
+    assert json.loads(only.stdout) == {"region": "us-ashburn-1"}
 
 
 def test_cli_variables_with_keys(tmp_path: Path) -> None:

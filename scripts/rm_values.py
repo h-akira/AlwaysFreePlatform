@@ -5,7 +5,10 @@ Subcommands:
   variables TFVARS_JSON [KEYS]
                              Print Resource Manager stack variables as JSON.
                              KEYS (comma separated) limits them to those keys,
-                             which must all be set.
+                             which must all be set. Without KEYS (the main
+                             stack), the variables in ENV_VARIABLES are added
+                             from the environment; they must not be in the
+                             file, which is kept in git.
   get TFVARS_JSON KEY        Print one top-level value from the tfvars file.
   outputs                    Read a Terraform state from stdin and print
                              outputs as KEY=VALUE lines.
@@ -24,6 +27,7 @@ Subcommands:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -39,6 +43,24 @@ def to_rm_variables(tfvars: dict[str, Any]) -> dict[str, str]:
         if value is None:
             raise ValueError(f"variable {key!r} is null; remove it to use the default")
         result[key] = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+    return result
+
+
+# Variables of the main stack that only come from the environment: personal
+# data that must never be written into a file kept in git.
+ENV_VARIABLES = {"notification_email": "AFP_NOTIFICATION_EMAIL"}
+
+
+def add_env_variables(tfvars: dict[str, Any], environ: dict[str, str]) -> dict[str, Any]:
+    """tfvars plus ENV_VARIABLES taken from environ."""
+    result = dict(tfvars)
+    for key, env in ENV_VARIABLES.items():
+        if key in tfvars:
+            raise ValueError(f"{key} must not be in the tfvars file (it is kept in git); set {env} instead")
+        value = environ.get(env, "")
+        if not value:
+            raise ValueError(f"{env} is not set (it gives the variable {key})")
+        result[key] = value
     return result
 
 
@@ -139,6 +161,8 @@ def main(argv: list[str]) -> int:
         tfvars = _load_json(argv[1])
         if len(argv) == 3:
             tfvars = select_keys(tfvars, [key for key in argv[2].split(",") if key])
+        else:
+            tfvars = add_env_variables(tfvars, dict(os.environ))
         print(json.dumps(to_rm_variables(tfvars)))
     elif len(argv) == 3 and argv[0] == "get":
         value = _load_json(argv[1]).get(argv[2])
