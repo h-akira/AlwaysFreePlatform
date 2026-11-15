@@ -28,10 +28,10 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 
 - **トリガーの出来事**（GitHub などの外のリポジトリ）: Push・Pull Request Created・Updated・Merged・Reopened。Push では、ブランチの名前と、含める・除くファイルの glob で絞れる。**タグの push を出来事として選べる・タグの名前で絞れるという記述は無い**（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。
 - **GitHub への接続**: GitHub の Personal Access Token を Vault のシークレットに入れ、接続はそのシークレットを指す。文書の手順は classic のトークンで、非公開のリポジトリを読むには「Full control of private repositories」（`repo`）を付けるとされる。fine-grained のトークンの記述は無い（[Build Source Integration](https://docs.oracle.com/en-us/iaas/Content/devops/using/getting_started.htm)）。
-- **fine-grained のトークンでは、DevOps は GitHub を読めなかった**（トークンは対象のリポジトリだけ・Contents の読み取りだけ）:
-  - 接続の検証（`oci devops connection validate`）が `500 InternalError`（「Unable to validate the connection」）。
-  - ビルドの実行が、ビルドの段に入る前に失敗した（「Internal Error fetching build spec file, please try again.」）。
-  - Troubleshooting のページ（[Troubleshooting DevOps](https://docs.oracle.com/en-us/iaas/Content/devops/using/troubleshooting.htm)）に、この 2 つの症状は無い。
+- **fine-grained のトークンで、通るものと通らないものがあった**（トークンは対象のリポジトリだけ・Contents と Metadata の読み取りだけ）。**原因は分かっていない**:
+  - 通らないもの: 接続の検証が `500 InternalError`（「Unknown Error. Unable to validate the connection」）。ビルドは、ビルドの段に入る前に失敗する（「Internal Error fetching build spec file, please try again.」。監査ログの `GetGitFileContent` が 500）。シークレットは読めている（監査ログの `GetSecretBundle` が 200）。
+  - classic のトークン（`repo`）は通る。
+  - 権限が足りないときは、`RelatedResourceNotAuthorizedOrNotFound`（監査ログでは `GetGitFileContent` の 404）になる。Troubleshooting のページ（[Troubleshooting DevOps](https://docs.oracle.com/en-us/iaas/Content/devops/using/troubleshooting.htm)）に、上の 500 の症状は無い。
 - GitHub の webhook の Content type が既定の `application/x-www-form-urlencoded` のままだと、トリガーの URL は `400`（`InvalidParameter`・「Unable to parse message body」）を返す（2026-11-15。ping で確かめた）。`application/json` にすると通った。
 - トリガーの絞りを `headRef: refs/tags/v*` にすると、`main` への push ではビルドが始まらなかった（2026-11-15）。タグの push で始まるかは未確認。
 - **webhook**: GitHub のトリガーは、GitHub の側に webhook と秘密の文字列を設定しなければならない。中身の形式は `application/json`。トリガーの URL と秘密の文字列は、コンソールでトリガーを作ったときに一度だけ表示され、あとから取り出せない（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。Terraform の `oci_devops_trigger` が出す属性は `trigger_url` までで、秘密の文字列は無い（[プロバイダの文書](https://registry.terraform.io/providers/oracle/oci/latest/docs/resources/devops_trigger)。2026-11-15）。
@@ -54,7 +54,7 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - 成果物を Artifact Registry に置かず、デプロイの構成のファイルだけを inline で書いて動くか（コマンドが自分で成果物を取りに行く形）。
 - インスタンス・グループへのデプロイに料金がかかるか。
 - GitHub のタグの push でトリガーが動くか（§3）。
-- classic のトークン（`repo`）で、非公開のリポジトリを読めるか（§3）。
+- fine-grained のトークンの一部でだけ、DevOps が GitHub に問い合わせる段で 500 になる理由（§3）。
 
 ## 5. 出典
 
