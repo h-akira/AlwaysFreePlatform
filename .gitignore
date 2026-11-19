@@ -2,6 +2,7 @@
 pre-research/
 tmp/
 learning/
+reports/
 
 # Secrets and environment-specific values
 .env

@@ -55,6 +55,7 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - 実行環境の大きさは、既定が 2 OCPU・8 GB。変えられるが、用意に時間がかかる。**CPU の種類（arm64 が選べるか）の記述は無い**（[Managed Build Stage](https://docs.oracle.com/en-us/iaas/Content/devops/using/managed_buildstage.htm)）。
 - **料金**: 「ビルドの間に使った実行環境（OCPU とメモリ）の分を課金する」（同上）。単価は確かめていない。
 - ビルドの手順のファイル（`build_spec.yaml`）の `outputArtifacts` に `DOCKER_IMAGE` を書くと、手順の中で作ったイメージを成果物として次の段に渡す。`env.exportedVariables` の値は、同じパイプラインのあとの段で使える（[Build Specification](https://docs.oracle.com/en-us/iaas/Content/devops/using/build_specs.htm)）。
+- **資源の説明（description）**: HTML のタグに見える文字（`<` と `>` で囲んだもの）を含むと断られる（2026-11-15）。ビルドの段は、作るときは説明を省けるが、そのあとの更新では空の説明が送られ、`400 InvalidParameter`（「Invalid description」）で断られる（2026-11-19）。
 
 ## 4. 未確認
 
