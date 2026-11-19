@@ -245,6 +245,8 @@ resource "oci_devops_build_pipeline_stage" "build" {
   build_pipeline_id         = oci_devops_build_pipeline.project[each.key].id
   build_pipeline_stage_type = "BUILD"
   display_name              = "build"
+  # An update sends the description; DevOps rejects an empty one.
+  description               = "Release the tag on the head of release for the VM to build"
   image                     = "OL8_X86_64_STANDARD_10"
   build_spec_file           = "build_spec.yaml"
   primary_build_source      = "project"
