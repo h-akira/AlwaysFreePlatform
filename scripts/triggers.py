@@ -14,6 +14,8 @@ Usage: triggers.py prune|create|delete-all
               another build pipeline), and put its webhook secret into the
               project's Vault secret. The secret is never printed; the trigger
               URL and the name of the Vault secret are, for the GitHub webhook.
+              A trigger whose filter differs is updated in place, which keeps
+              its URL and secret.
   delete-all  Before destroy: delete every trigger of the DevOps project.
 
 Reads the main stack outputs (KEY=VALUE lines, as `stack.sh main outputs`
@@ -36,8 +38,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-# Which pushes start a build: tags v* (ADR 015).
-HEAD_REF = "refs/tags/v*"
+# Which pushes start a build: the branch release (ADR 029). The version is the
+# tag v* on its head commit (scripts/devops-release.sh).
+HEAD_REF = "release"
 EVENTS = ["PUSH"]
 
 
@@ -91,10 +94,21 @@ class Oci:
         items = (data or {}).get("data", {}).get("items", [])
         return {item["display-name"]: item["id"] for item in items}
 
-    def trigger_pipeline(self, trigger_id: str) -> str | None:
+    def trigger_action(self, trigger_id: str) -> tuple[str | None, list[str], str | None]:
+        """(build pipeline OCID, events, head ref) of a trigger's first action."""
         data = self.run("devops", "trigger", "get", "--trigger-id", trigger_id)
         acts = (data or {}).get("data", {}).get("actions") or []
-        return acts[0].get("build-pipeline-id") if acts else None
+        if not acts:
+            return None, [], None
+        f = acts[0].get("filter") or {}
+        return acts[0].get("build-pipeline-id"), list(f.get("events") or []), (f.get("include") or {}).get("head-ref")
+
+    def update_trigger(self, trigger_id: str, build_pipeline_id: str) -> None:
+        """Set the trigger's actions; its URL and webhook secret stay."""
+        self.run(
+            "devops", "trigger", "update-github-trigger", "--trigger-id", trigger_id,
+            "--actions", json.dumps(actions(build_pipeline_id)), "--force", "--wait-for-state", "SUCCEEDED",
+        )
 
     def delete_trigger(self, trigger_id: str) -> None:
         self.run("devops", "trigger", "delete", "--trigger-id", trigger_id, "--force", "--wait-for-state", "SUCCEEDED")
@@ -147,7 +161,11 @@ def create(oci: Oci, outputs: dict[str, str]) -> None:
     for project, p in sorted(pipelines.items()):
         name = trigger_name(project)
         if name in existing:
-            if oci.trigger_pipeline(existing[name]) == p["build_pipeline_id"]:
+            pipeline, events, head_ref = oci.trigger_action(existing[name])
+            if pipeline == p["build_pipeline_id"]:
+                if events != EVENTS or head_ref != HEAD_REF:
+                    print(f"Updating the filter of trigger {name} (push to {HEAD_REF}) ...")
+                    oci.update_trigger(existing[name], p["build_pipeline_id"])
                 continue
             print(f"Trigger {name} points at another build pipeline; recreating it ...")
             oci.delete_trigger(existing[name])

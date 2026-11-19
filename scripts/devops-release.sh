@@ -8,12 +8,12 @@
 #
 # Usage: devops-release.sh
 #   Prints the tag (for AFP_TAG, which the deployment receives); the progress
-#   goes to stderr. Fails unless the commit under build is a tag v*.
+#   goes to stderr. Fails unless exactly one tag v* points at the commit under
+#   build (the head of the branch release, ADR 029).
 #
 # Environment (set by OCI DevOps and by the build pipeline's parameters):
 #   AFP_PROJECT, AFP_BUCKET        Project name and the platform's bucket.
 #   OCI_PRIMARY_SOURCE_DIR         Checkout of the project's repository.
-#   OCI_TRIGGER_SOURCE_BRANCH_NAME Ref that started the build, if a trigger did.
 #   The OCI CLI is already authenticated as the build pipeline.
 set -euo pipefail
 
@@ -31,13 +31,12 @@ say() { echo "$*" >&2; }
 [[ "$AFP_PROJECT" =~ $PROJECT_RE ]] || die "invalid project name: $AFP_PROJECT"
 src="$OCI_PRIMARY_SOURCE_DIR"
 
-# The tag: one that points at the commit under build, else the trigger's ref.
-tag="$(git -C "$src" tag --points-at HEAD --list 'v*' | head -1)"
-if [[ -z "$tag" ]]; then
-  ref="${OCI_TRIGGER_SOURCE_BRANCH_NAME:-}"
-  [[ "$ref" == refs/tags/v* || "$ref" == v* ]] && tag="${ref#refs/tags/}"
-fi
-[[ -n "$tag" ]] || die "the commit under build has no tag v* (trigger ref: '${OCI_TRIGGER_SOURCE_BRANCH_NAME:-}'); nothing to release"
+# The tag: the one v* that points at the commit under build. Several would
+# leave the version to chance, so they are refused.
+tags="$(git -C "$src" tag --points-at HEAD --list 'v*')"
+[[ -n "$tags" ]] || die "the commit under build has no tag v*; push the tag with the branch (git push --atomic origin HEAD:release <tag>)"
+[[ "$tags" != *$'\n'* ]] || die "the commit under build has several tags v* ($(printf '%s' "$tags" | tr '\n' ' ')); leave one"
+tag="$tags"
 [[ "$tag" =~ $TAG_RE ]] || die "tag $tag cannot be a Docker tag"
 [[ -f "$src/compose.afp.yaml" ]] || die "compose.afp.yaml is not at the top of the repository"
 

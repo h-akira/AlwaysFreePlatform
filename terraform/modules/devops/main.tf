@@ -267,7 +267,9 @@ resource "oci_devops_build_pipeline_stage" "build" {
       connection_type = "GITHUB"
       connection_id   = oci_devops_connection.github.id
       repository_url  = each.value.repository
-      branch          = "main"
+      # The trigger builds the pushed branch; a run started by hand builds
+      # this one. Both are release (ADR 029).
+      branch          = "release"
     }
   }
 }

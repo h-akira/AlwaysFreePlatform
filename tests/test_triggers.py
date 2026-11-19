@@ -36,7 +36,14 @@ if cmd == ["devops", "trigger", "list"]:
     print(json.dumps({{"data": {{"items": [{{"display-name": n, "id": t["id"]}} for n, t in state.items()]}}}}))
 elif cmd == ["devops", "trigger", "get"]:
     t = next(t for t in state.values() if t["id"] == opt("--trigger-id"))
-    print(json.dumps({{"data": {{"actions": [{{"build-pipeline-id": t["pipeline"]}}]}}}}))
+    f = {{"events": t.get("events", ["PUSH"]), "include": {{"head-ref": t.get("head_ref", "release")}}}}
+    print(json.dumps({{"data": {{"actions": [{{"build-pipeline-id": t["pipeline"], "filter": f}}]}}}}))
+elif cmd == ["devops", "trigger", "update-github-trigger"]:
+    t = next(t for t in state.values() if t["id"] == opt("--trigger-id"))
+    a = json.loads(opt("--actions"))[0]
+    t["pipeline"] = a["buildPipelineId"]
+    t["events"] = a["filter"]["events"]
+    t["head_ref"] = a["filter"]["include"]["headRef"]
 elif cmd == ["devops", "trigger", "delete"]:
     tid = opt("--trigger-id")
     state = {{n: t for n, t in state.items() if t["id"] != tid}}
@@ -116,7 +123,7 @@ def test_create_makes_the_trigger_and_stores_the_secret_without_printing_it(worl
     assert "afp-hello-webhook-abcd" in result.stdout
     create = next(c for c in world.calls() if "create-github-trigger" in c)
     acts = json.loads(create[create.index("--actions") + 1])
-    assert acts[0]["filter"] == {"triggerSource": "GITHUB", "events": ["PUSH"], "include": {"headRef": "refs/tags/v*"}}
+    assert acts[0]["filter"] == {"triggerSource": "GITHUB", "events": ["PUSH"], "include": {"headRef": "release"}}
     assert "--wait-for-state" not in create  # with it, the CLI would not return the secret
 
 
@@ -126,6 +133,19 @@ def test_create_is_idempotent(world: World) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
     assert not any("create-github-trigger" in c or "delete" in c for c in world.calls())
+
+
+def test_create_updates_the_filter_in_place(world: World) -> None:
+    world.set_triggers({"afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello", "head_ref": "refs/tags/v*"}})
+    result = world.run("create")
+    assert result.returncode == 0, result.stderr
+    # Same trigger (same URL and secret), new filter; no webhook to register again.
+    assert world.triggers() == {"afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello", "events": ["PUSH"], "head_ref": "release"}}
+    assert "Updating the filter" in result.stdout
+    assert "Payload URL" not in result.stdout
+    assert not any("create-github-trigger" in c or "delete" in c for c in world.calls())
+    update = next(c for c in world.calls() if "update-github-trigger" in c)
+    assert "--wait-for-state" in update
 
 
 def test_create_replaces_a_trigger_of_another_pipeline(world: World) -> None:

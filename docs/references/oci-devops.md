@@ -2,7 +2,7 @@
 
 OCI DevOps は、ビルドとデプロイのパイプラインを動かすサービス。AWS の CodePipeline・CodeBuild・CodeDeploy を 1 つにしたものに当たる。ここでは、ビルドの段と、Compute の VM にデプロイする仕組みをまとめる。
 
-- **確かめた日**: 2026-11-10・2026-11-15（Oracle の公式文書。2026-11-15 に一部を動かして確かめた。動かした結果はそう明記する）
+- **確かめた日**: 2026-11-10・2026-11-15・2026-11-19（Oracle の公式文書。2026-11-15 に一部を動かして確かめた。動かした結果はそう明記する）
 
 ## 1. 仕組み
 
@@ -35,7 +35,12 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 - fine-grained のトークンの対象のリポジトリは、作ったあとで GitHub の画面で編集して足せる。トークンの値は変わらない。
 - 権限が足りないときは、`RelatedResourceNotAuthorizedOrNotFound`（監査ログでは `GetGitFileContent` の 404）になる。Troubleshooting のページ（[Troubleshooting DevOps](https://docs.oracle.com/en-us/iaas/Content/devops/using/troubleshooting.htm)）に、上の 500 の症状は無い。
 - GitHub の webhook の Content type が既定の `application/x-www-form-urlencoded` のままだと、トリガーの URL は `400`（`InvalidParameter`・「Unable to parse message body」）を返す（2026-11-15。ping で確かめた）。`application/json` にすると通った。
-- トリガーの絞りを `headRef: refs/tags/v*` にすると、`main` への push ではビルドが始まらなかった（2026-11-15）。タグの push で始まるかは未確認。
+- **GitHub のタグの push からは、ビルドできない**（2026-11-19）:
+  - トリガーの絞り（`headRef`）は、ブランチの名前（例: `release`。`refs/heads/` は付けない）で、そのブランチへの push に合う。
+  - タグの push は、`refs/tags/<名前>` を全部書いたときだけ合った。`refs/tags/v*`・`v*` では合わなかった（`*` がワイルドカードとして効くかは未確認）。GitHub からの知らせは、合わないときも受け付けられる（202）。
+  - タグの push でビルドが始まっても、DevOps はタグの ref をブランチの名前として取りに行き、「Remote branch refs/tags/<名前> not found in upstream origin」でソースの取得に失敗する。`build_spec.yaml` の手順に入る前。
+- ブランチの push からのビルドでは、取ったリポジトリに、そのコミットに付いたタグも入っている（`git tag --points-at HEAD` で見える。2026-11-19）。ブランチとタグを 1 回の push（`git push --atomic`）で送ったときも、タグは入っていた（1 回試した。2026-11-19）。
+- トリガーの絞りは、`oci devops trigger update-github-trigger` で変えられる。トリガーの URL と webhook の Secret は変わらない（2026-11-19）。
 - **webhook**: GitHub のトリガーは、GitHub の側に webhook と秘密の文字列を設定しなければならない。中身の形式は `application/json`。トリガーの URL と秘密の文字列は、コンソールでトリガーを作ったときに一度だけ表示され、あとから取り出せない（[Triggering a Build Run](https://docs.oracle.com/en-us/iaas/Content/devops/using/trigger_build.htm)）。Terraform の `oci_devops_trigger` が出す属性は `trigger_url` までで、秘密の文字列は無い（[プロバイダの文書](https://registry.terraform.io/providers/oracle/oci/latest/docs/resources/devops_trigger)。2026-11-15）。
 - **webhook の秘密の文字列（Secret）を API で得られるのは、作成の応答だけ**: SDK の型で、`secret` があるのは作成の応答の `GithubTriggerCreateResult` だけ。取得の `GithubTrigger`・一覧の `GithubTriggerSummary` には無い（[oci-go-sdk の devops](https://github.com/oracle/oci-go-sdk/tree/master/devops)）。作り直す API も無い（CLI 3.96.0 の `oci devops trigger` の命令の一覧）。
 - **Terraform で作ると Secret は得られない**: プロバイダ 9.12.1 は、作成の応答から ID だけを取り、取得の API で読み直して state に書く（[devops_trigger_resource.go](https://github.com/oracle/terraform-provider-oci/blob/master/internal/service/devops/devops_trigger_resource.go)）。要望の issue [#1681](https://github.com/oracle/terraform-provider-oci/issues/1681) は 2022-10 から開いたまま（2026-11-15）。
@@ -55,7 +60,8 @@ OCI DevOps は、ビルドとデプロイのパイプラインを動かすサー
 
 - 成果物を Artifact Registry に置かず、デプロイの構成のファイルだけを inline で書いて動くか（コマンドが自分で成果物を取りに行く形）。
 - インスタンス・グループへのデプロイに料金がかかるか。
-- GitHub のタグの push でトリガーが動くか（§3）。
+- ブランチとタグを別々に push したとき、ビルドがソースを取るまでにタグが届いているか（届かなければ、版の名前が見つからない）。
+- 手で始めたビルド（ビルドのソースの既定のブランチを取る）が、トリガーからのビルドと同じに動くか。
 
 ## 5. 出典
 

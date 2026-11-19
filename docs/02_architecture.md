@@ -20,7 +20,7 @@
 flowchart TB
   subgraph local["手元"]
     dev["開発: 本番と同じイメージ・同じ版の MySQL"]
-    push["プロジェクトのタグを push"]
+    push["プロジェクトの release に push<br/>（版のタグ付き）"]
   end
   push --> gh["GitHub"] --> devops["OCI DevOps<br/>ビルド"]
   devops --> reg[("OCIR<br/>イメージ")]
@@ -60,7 +60,7 @@ flowchart TB
 | **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る） |
 | **Object Storage** | プロジェクトの一覧・各プロジェクトの今の版・DB のダンプ |
 | **OCIR**（OCI のコンテナ・レジストリ。[references/oci-registry.md](references/oci-registry.md)） | ビルドしたイメージ。リポジトリはプロジェクトのサービスごと |
-| **OCI DevOps** | 各プロジェクトのタグの push を受けてそのプロジェクトをビルドし、VM に `afp deploy` を実行させる（§5.6） |
+| **OCI DevOps** | 各プロジェクトの `release` ブランチへの push を受けてそのプロジェクトをビルドし、VM に `afp deploy` を実行させる（§5.6） |
 | **OCI Monitoring・Notifications** | 基盤のヘルスチェック（§5.7）の結果を受け、失敗したり届かなくなったりしたらメールで知らせる |
 | **OCI Bastion** | 手元からプライベート・サブネットの DB に入るための、一時的な入口（§5.9） |
 | **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものをすべて作る。プロジェクトの一覧から、プロジェクトごとのシークレットとパイプラインも作る |
@@ -128,7 +128,7 @@ sequenceDiagram
 - A1 は arm64、E2.1.Micro は amd64。イメージは、そのときの VM の CPU の種類向けにだけビルドする。VM の CPU の種類を替えたら、載っている全プロジェクトをビルドし直す。
 - VM にはスワップを置く。kdump は使わない（カーネルが落ちたときの記録のために、メモリを取っておかない）。
 - アイドル回収は、作り直せば戻ることで備える（§4）。わざと負荷をかけて避けることはしない。
-- タグの push からのデプロイでは、VM がその場でビルドし、イメージを OCIR に置く。前の版への戻しと、VM を作り直したあとの起動では、ビルドせず OCIR から取る。手元からのデプロイは、手元でビルドする。
+- `release` ブランチへの push からのデプロイでは、VM がその場でビルドし、イメージを OCIR に置く。前の版への戻しと、VM を作り直したあとの起動では、ビルドせず OCIR から取る。手元からのデプロイは、手元でビルドする。
 
 ### 5.3 DB
 
@@ -148,7 +148,7 @@ sequenceDiagram
 
 ### 5.6 デプロイ
 
-- **各プロジェクトのリポジトリ** にタグ（例: `v1.2.3`）を push すると、そのプロジェクトだけをビルドし、VM でデプロイするところまで自動で行う。デプロイした版の名前は、タグの名前そのもの。
+- **各プロジェクトのリポジトリ** の `release` ブランチに push すると、そのプロジェクトだけをビルドし、VM でデプロイするところまで自動で行う。デプロイした版の名前は、`release` の先頭のコミットに付いた `v` で始まるタグ（例: `v1.2.3`）の名前そのもの。そのようなタグが無い、または複数あるときは、デプロイしない。
 - パイプラインは、プロジェクトの一覧でリポジトリを伝えたプロジェクトにだけ作る。伝えないプロジェクトは、管理者が手元からデプロイする（下の「DevOps が使えないとき」と同じ道）。
 - **基盤のコードも、タグで版を決めて VM に届ける**。どのタグを使うかを Object Storage に置き、VM はそのタグのコードを公開リポジトリから取って入れ替える。入れ替えるのは、VM の起動のたびと、管理者が Run Command で呼んだときに流れる起動のスクリプト（`afp` の外の固定のスクリプト）で、`afp` 自身は入れ替えない。
 - VM でデプロイを実行するのは、DevOps の **インスタンス・グループへのデプロイ**（AWS の CodeDeploy に当たる）。VM の中の **Oracle Cloud Agent**（OCI のイメージに入っているエージェント）の **Run Command** のプラグインが、`afp deploy <プロジェクト> <版>` を実行する（[references/oci-devops.md](references/oci-devops.md)・[references/oci-run-command.md](references/oci-run-command.md)）。
@@ -160,16 +160,16 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 | 共有する（基盤が1つだけ持つ） | プロジェクトごと（リポジトリを伝えたプロジェクトに、`make apply` が作る） |
 |---|---|
 | DevOps のプロジェクト（パイプラインを入れる箱） | ビルドのパイプライン・デプロイのパイプライン |
-| GitHub への接続（非公開のリポジトリを読むためのトークンは基盤で 1 本。Vault に置き、値は管理者が入れる） | トリガー（どのリポジトリへの、タグの push で動くか）と webhook の Secret（Vault） |
+| GitHub への接続（非公開のリポジトリを読むためのトークンは基盤で 1 本。Vault に置き、値は管理者が入れる） | トリガー（どのリポジトリの、`release` への push で動くか）と webhook の Secret（Vault） |
 | 通知の宛先（成否のメール） | イメージとリリース一式の置き場所 |
 | DevOps に与える OCI の権限 | — |
 
-- トリガーだけは Terraform で作らず、`make apply` の中で OCI CLI が作る・消す（Terraform では webhook の Secret が得られないため）。`make apply` で設定どおりになり、`make destroy` で消えるのは、ほかの資源と同じ。
+- トリガーだけは Terraform で作らず、`make apply` の中で OCI CLI が作る・消す・絞りを直す（Terraform では webhook の Secret が得られないため）。`make apply` で設定どおりになり、`make destroy` で消えるのは、ほかの資源と同じ。
 - GitHub の側の webhook は、パイプラインを作ったときに、管理者が GitHub の画面で登録する。URL は `make apply` が表示し、Secret は Vault からコピーする。
 - **パイプラインはプロジェクトごとに独立させる**。あるプロジェクトの push は、そのプロジェクトのパイプラインだけを動かす。
 - ビルドは、プロジェクトの間で並んで走ってもよい。
 - VM の上のデプロイは、1 つずつ行う（`afp` がロックを取る）。後のものは前のものが終わるのを待つ。
-- プロジェクトは、基盤の雛形に沿った DevOps のビルドの手順（`build_spec.yaml`）を、自分のリポジトリに置く。雛形の決まった部分が、タグのソースと `compose.afp.yaml` を Object Storage に置き、VM の `afp deploy` がそれをビルドしてデプロイする。プロジェクトは、決まった部分の前に自分の手順を足せる。
+- プロジェクトは、基盤の雛形に沿った DevOps のビルドの手順（`build_spec.yaml`）を、自分のリポジトリに置く。雛形の決まった部分が、その版のソースと `compose.afp.yaml` を Object Storage に置き、VM の `afp deploy` がそれをビルドしてデプロイする。プロジェクトは、決まった部分の前に自分の手順を足せる。
 
 ### 5.7 基盤の監視
 
