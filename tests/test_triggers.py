@@ -121,6 +121,7 @@ def test_create_makes_the_trigger_and_stores_the_secret_without_printing_it(worl
     assert not any(SECRET in " ".join(c) for c in world.calls())
     assert "Payload URL: https://devops.example.com/afp-hello" in result.stdout
     assert "afp-hello-webhook-abcd" in result.stdout
+    assert "--region us-ashburn-1 --secret-id ocid1.vaultsecret.oc1..wh --query 'data.\"secret-bundle-content\".content' --raw-output | base64 -d" in result.stdout
     create = next(c for c in world.calls() if "create-github-trigger" in c)
     acts = json.loads(create[create.index("--actions") + 1])
     assert acts[0]["filter"] == {"triggerSource": "GITHUB", "events": ["PUSH"], "include": {"headRef": "release"}}

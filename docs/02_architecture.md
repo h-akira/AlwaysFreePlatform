@@ -22,9 +22,9 @@ flowchart TB
     dev["開発: 本番と同じイメージ・同じ版の MySQL"]
     push["プロジェクトの release に push<br/>（版のタグ付き）"]
   end
-  push --> gh["GitHub"] --> devops["OCI DevOps<br/>ビルド"]
-  devops --> reg[("OCIR<br/>イメージ")]
+  push --> gh["GitHub"] --> devops["OCI DevOps<br/>リリース一式を置く"]
   devops -->|"エージェントに afp deploy を実行させる"| afp
+  afp -->|"ビルドして push"| reg[("OCIR<br/>イメージ")]
   user["ブラウザ"] -->|"HTTPS<br/>app-a.example.com<br/>app-b.example.net"| caddy
   subgraph vcn["VCN"]
     subgraph pub["パブリック・サブネット"]
@@ -53,14 +53,14 @@ flowchart TB
 
 | 部品 | 役目 |
 |---|---|
-| **VM**（OCI Compute） | プロジェクトのコンテナと Caddy を Docker で動かす。ビルドはしない |
+| **VM**（OCI Compute） | プロジェクトのコンテナと Caddy を Docker で動かす。`release` ブランチへの push からのデプロイでは、イメージもここでビルドする |
 | **Caddy** | 入口。HTTPS を受け、ドメイン名でプロジェクトに振り分ける。証明書（Let's Encrypt）を自動で取得・更新する |
 | **`afp`** | 基盤のコマンド（Python の標準ライブラリだけで書く。§5.8）。VM の上で、初期設定・プロジェクトの一覧に合わせた同期（プロジェクトの DB とユーザの作成を含む）・デプロイ・バックアップ・基盤のヘルスチェックを受け持つ。外からは、VM の中のエージェント（Oracle Cloud Agent の Run Command）を通して呼ぶ（§5.6） |
 | **MySQL HeatWave** | 全プロジェクトで共有する DB。プロジェクトごとにデータベースとユーザを分ける |
 | **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る） |
-| **Object Storage** | プロジェクトの一覧・各プロジェクトの今の版・DB のダンプ |
+| **Object Storage** | プロジェクトの一覧・各プロジェクトの今の版・リリース一式・DB のダンプ・`afp` の操作のログ |
 | **OCIR**（OCI のコンテナ・レジストリ。[references/oci-registry.md](references/oci-registry.md)） | ビルドしたイメージ。リポジトリはプロジェクトのサービスごと |
-| **OCI DevOps** | 各プロジェクトの `release` ブランチへの push を受けてそのプロジェクトをビルドし、VM に `afp deploy` を実行させる（§5.6） |
+| **OCI DevOps** | 各プロジェクトの `release` ブランチへの push を受けて、そのプロジェクトのリリース一式を Object Storage に置き、VM に `afp deploy` を実行させる（§5.6） |
 | **OCI Monitoring・Notifications** | 基盤のヘルスチェック（§5.7）の結果を受け、失敗したり届かなくなったりしたらメールで知らせる |
 | **OCI Bastion** | 手元からプライベート・サブネットの DB に入るための、一時的な入口（§5.9） |
 | **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものをすべて作る。プロジェクトの一覧から、プロジェクトごとのシークレットとパイプラインも作る |
@@ -94,7 +94,7 @@ VM の中には失って困るものを置かない。
 | リリース一式 | Object Storage（デプロイが版ごとに置く） |
 | 基盤のコード | この公開リポジトリ。どのタグを使うかは Object Storage に置き、VM はそのタグのコードを取る（§5.6） |
 | HTTPS の証明書 | VM の中。消えたら Caddy が自動で取り直す |
-| ログ | VM の中。消えてよい |
+| ログ | VM の中（消えてよい）。`afp` の操作のログは Object Storage |
 
 VM が消えたときは、Terraform で作り直すだけで戻る。
 

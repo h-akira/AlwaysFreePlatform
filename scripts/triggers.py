@@ -181,7 +181,9 @@ def create(oci: Oci, outputs: dict[str, str]) -> None:
         print(
             f"Created trigger {name}. Register a webhook in the GitHub repository of {project}:\n"
             f"  Payload URL: {url}\n"
-            f"  Secret:      Vault secret {p['webhook_secret_name']} (Versions > View Secret Contents > Copy secret)\n"
+            f"  Secret:      Vault secret {p['webhook_secret_name']}; copy it with:\n"
+            f"    oci secrets secret-bundle get --region {oci.region} --secret-id {p['webhook_secret_id']}"
+            " --query 'data.\"secret-bundle-content\".content' --raw-output | base64 -d | pbcopy\n"
             "  Content type: application/json; events: Just the push event."
         )
 
