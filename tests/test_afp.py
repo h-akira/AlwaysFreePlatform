@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 from pathlib import Path
@@ -258,6 +259,24 @@ def test_install_creates_the_network_once(tmp_path: Path) -> None:
     cli.cmd_install(make_ctx(tmp_path, world), NO_ARGS)
     assert not any(c["args"][:3] == ["docker", "network", "create"] for c in world.calls)
     assert (tmp_path / "caddy").is_dir()
+
+
+@pytest.fixture(autouse=True)
+def _restore_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # main() changes the directory; monkeypatch puts it back after each test.
+    monkeypatch.chdir(tmp_path)
+
+
+def test_main_runs_when_the_callers_directory_is_gone(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    gone = tmp_path / "deployment"
+    gone.mkdir()
+    monkeypatch.chdir(gone)
+    gone.rmdir()  # as a newer DevOps deployment does to the running one
+    monkeypatch.setitem(cli.COMMANDS, "backup", cli.Command(lambda ctx, args: os.getcwd(), "h", upload_log=False,
+                                                            arguments=(("project", "?"),)))
+    assert cli.main(["backup", "hello"], paths=paths_in(tmp_path)) == 0
+    assert capsys.readouterr().out.startswith("afp backup: OK: /\n")
 
 
 def paths_in(tmp_path: Path) -> cli.Paths:

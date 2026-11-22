@@ -213,6 +213,9 @@ def finish(ctx: Context, object_name: str, upload: bool) -> str:
 
 
 def main(argv: list[str] | None = None, paths: Paths | None = None) -> int:
+    # The caller's directory may vanish while afp runs: a new OCI DevOps
+    # deployment deletes the directory of the one before, even while it runs.
+    os.chdir("/")
     args = build_parser().parse_args(argv)
     if paths is None:
         if os.geteuid() != 0:
