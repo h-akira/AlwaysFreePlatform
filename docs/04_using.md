@@ -21,7 +21,7 @@
 | `generate` | 基盤が値を生成する。人は値を見なくてよい（署名の鍵など） |
 | `manual` | 仮の値で作られる。プロジェクトが本当の値を Vault に入れる（外部の API キーなど） |
 
-- DB のパスワードは、書かなくても基盤が必ず作る。英字・数字と、URL でそのまま使える記号（`-`・`_`・`.`・`~`）だけで作り、記号を必ず含める。接続の URL にそのまま埋め込める。
+- DB のパスワードは、書かなくても基盤が必ず作る。英字・数字・記号で作り、記号を必ず含める。接続の URL に埋め込むなら、プロジェクトがエスケープする。
 
 ## 2. プロジェクトのリポジトリに置くもの
 
@@ -43,7 +43,11 @@ services:
     build: .
     image: ${AFP_IMAGE_PREFIX}/web:${AFP_TAG}
     environment:
-      DATABASE_URL: mysql://${AFP_DB_USER}:${AFP_DB_PASSWORD}@${AFP_DB_HOST}:${AFP_DB_PORT}/${AFP_DB_NAME}
+      AFP_DB_HOST: ${AFP_DB_HOST}
+      AFP_DB_PORT: ${AFP_DB_PORT}
+      AFP_DB_NAME: ${AFP_DB_NAME}
+      AFP_DB_USER: ${AFP_DB_USER}
+      AFP_DB_PASSWORD: ${AFP_DB_PASSWORD}
       SIGNING_KEY: ${SIGNING_KEY}
       BASE_URL: https://${AFP_DOMAIN}
     healthcheck:

@@ -2,7 +2,7 @@
 
 OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 
-- **確かめた日**: 2026-11-07（Oracle の公式文書）。予約済みの公開 IP・Cloud Guard・アイドル回収は 2026-11-13
+- **確かめた日**: 2026-11-07（Oracle の公式文書）。予約済みの公開 IP・Cloud Guard・アイドル回収は 2026-11-13。MySQL HeatWave の管理者のパスワードの特殊文字は 2026-11-22
 - **無料枠は変わる**（2026-06 に A1 の枠が半分になった）。使う前に §6 の出典で確かめ直す。
 
 ## 1. 無料枠の種類
@@ -66,6 +66,7 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 - 作成にかかった時間は約 17 分。
 - `max_connections` は 200。`time_zone` は UTC。`partial_revokes` は有効。
 - パスワードの検査（`validate_password`）が MEDIUM で効いている。8 文字以上で、英大文字・英小文字・数字・記号を各 1 つ以上含む必要がある。
+- DB を作る API は、管理者のパスワードに特殊文字を 1 つ以上求める。`~` は特殊文字として数えない（`~` を含んでもよいが、ほかの記号が 1 つ要る）。`!@#$%&*()-_=+[]{}<>:?.` はどれも 1 つで数えられた（2026-11-22 実測）。記号が足りないと `400 InvalidParameter`（「adminPassword … may not be valid」）になる。文書は「特殊文字（英数字でないもの）」とだけ書いている（[Changing the Administrator Password of a DB System](https://docs.oracle.com/en-us/iaas/mysql-database/doc/changing-administrator-password-db-system.html)）。
 
 ## 4. Autonomous Database の Always Free
 
@@ -92,6 +93,7 @@ PAYG のアカウントは対象外という情報が多いが（コミュニテ
 - [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)（Compute・ストレージ・DB・ネットワーク・アイドル回収）
 - [MySQL HeatWave Service の機能（Always Free）](https://docs.oracle.com/iaas/mysql-database/doc/features-mysql-heatwave-service.html)
 - [Always Free の MySQL の DB システムの作成](https://docs.oracle.com/iaas/mysql-database/doc/creating-always-free-db-system.html)
+- [Changing the Administrator Password of a DB System](https://docs.oracle.com/en-us/iaas/mysql-database/doc/changing-administrator-password-db-system.html)（管理者のパスワードの決まり）
 - [Always Free Autonomous Database の制限](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/autonomous-always-free.html)
 - Oracle の価格の API: `https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?currencyCode=JPY`（Oracle の見積もりの道具が使う価格表。Cloud Guard・公開 IP。2026-11-13）
 - [Release Announcement: Reserved Public IPs](https://blogs.oracle.com/cloud-infrastructure/release-announcement-reserved-public-ips-are-now-available-on-oracle-cloud-infrastructure)（予約済みの公開 IP は無料とする発表）

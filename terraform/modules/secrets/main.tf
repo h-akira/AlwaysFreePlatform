@@ -35,9 +35,9 @@ resource "random_password" "db_admin" {
   min_upper   = 1
   min_lower   = 1
   min_numeric = 1
+  # HeatWave requires a symbol. The provider's default symbols all count as
+  # one for OCI; "~" alone does not (ADR 030).
   min_special = 1
-  # Only symbols usable as-is in URLs; HeatWave requires at least one symbol.
-  override_special = "-_.~"
 }
 
 resource "oci_vault_secret" "db_admin_password" {
@@ -85,25 +85,23 @@ locals {
   pipelines = { for p in var.projects : p.name => p if p.pipeline }
 }
 
-# Same rules as the administrator's password (ADR 011).
+# Same rules as the administrator's password (ADR 030).
 resource "random_password" "project_db" {
-  for_each         = local.projects
-  length           = 24
-  min_upper        = 1
-  min_lower        = 1
-  min_numeric      = 1
-  min_special      = 1
-  override_special = "-_.~"
+  for_each    = local.projects
+  length      = 24
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
+  min_special = 1
 }
 
 resource "random_password" "generated" {
-  for_each         = local.generated
-  length           = 32
-  min_upper        = 1
-  min_lower        = 1
-  min_numeric      = 1
-  min_special      = 1
-  override_special = "-_.~"
+  for_each    = local.generated
+  length      = 32
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
+  min_special = 1
 }
 
 # One suffix per secret, so that a project (or a manual secret) removed and

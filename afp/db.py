@@ -17,8 +17,9 @@ from afp.runner import Runner
 
 CHARSET = "utf8mb4"
 COLLATION = "utf8mb4_ja_0900_as_cs_ks"
-# What Terraform generates (ADR 011); also safe inside a quoted SQL string.
-PASSWORD = re.compile(r"^[A-Za-z0-9._~-]{8,128}$")
+# What Terraform generates (its default symbols, ADR 030) and the symbols used
+# before; none of them breaks a quoted SQL string (no quotes or backslash).
+PASSWORD = re.compile(r"[A-Za-z0-9!#$%&()*+:<=>?@\[\]{}_.~-]{8,128}")
 
 
 def mysql_image(code_dir: Path) -> str:
@@ -31,7 +32,7 @@ def project_password(secret_json: str, project: str) -> str:
         value = json.loads(secret_json).get("AFP_DB_PASSWORD")
     except (ValueError, AttributeError):
         value = None
-    if not isinstance(value, str) or not PASSWORD.match(value):
+    if not isinstance(value, str) or not PASSWORD.fullmatch(value):
         raise AfpError(f"the secret of project {project} has no valid AFP_DB_PASSWORD")
     return value
 
@@ -41,7 +42,7 @@ def project_sql(project: Project, password: str) -> str:
 
     With partial_revokes on, "_" in the database name is taken literally.
     """
-    if not PASSWORD.match(password):
+    if not PASSWORD.fullmatch(password):
         raise AfpError(f"invalid DB password for project {project.name}")
     db = project.db_name
     user = f"'{db}'@'%'"

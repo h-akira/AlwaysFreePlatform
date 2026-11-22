@@ -83,10 +83,16 @@ def test_project_sql() -> None:
     assert "GRANT ALL ON `app_a`.* TO 'app_a'@'%';" in sql
 
 
-@pytest.mark.parametrize("password", ["short", "has'quote-12345", "back\\slash12345", ""])
+@pytest.mark.parametrize("password", ["short", "has'quote-12345", "back\\slash12345", "", 'has"dq12345', "has space1", "Abcdefg1\n"])
 def test_project_sql_rejects_unsafe_passwords(password: str) -> None:
     with pytest.raises(AfpError):
         db.project_sql(config.Project(name="a", domain="a.example.com", secret_id="s"), password)
+
+
+@pytest.mark.parametrize("password", ["Ab3!@#$%&*()-_=+[]{}<>:?", "Ab3-xyz_DEF.ghi~jkl"])
+def test_project_sql_accepts_generated_passwords(password: str) -> None:
+    sql = db.project_sql(config.Project(name="a", domain="a.example.com", secret_id="s"), password)
+    assert f"IDENTIFIED BY '{password}'" in sql
 
 
 def test_project_password() -> None:

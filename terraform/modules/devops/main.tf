@@ -246,10 +246,10 @@ resource "oci_devops_build_pipeline_stage" "build" {
   build_pipeline_stage_type = "BUILD"
   display_name              = "build"
   # An update sends the description; DevOps rejects an empty one.
-  description               = "Release the tag on the head of release for the VM to build"
-  image                     = "OL8_X86_64_STANDARD_10"
-  build_spec_file           = "build_spec.yaml"
-  primary_build_source      = "project"
+  description          = "Release the tag on the head of release for the VM to build"
+  image                = "OL8_X86_64_STANDARD_10"
+  build_spec_file      = "build_spec.yaml"
+  primary_build_source = "project"
 
   stage_execution_timeout_in_seconds = 1800
 
@@ -271,7 +271,7 @@ resource "oci_devops_build_pipeline_stage" "build" {
       repository_url  = each.value.repository
       # The trigger builds the pushed branch; a run started by hand builds
       # this one. Both are release (ADR 029).
-      branch          = "release"
+      branch = "release"
     }
   }
 }
