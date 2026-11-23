@@ -105,7 +105,7 @@ variable "vm_generation" {
 }
 
 variable "notification_email" {
-  description = "Email address that receives the DevOps build and deployment notifications. OCI sends it a mail to confirm the subscription. Given by the environment variable AFP_NOTIFICATION_EMAIL (scripts/rm_values.py), never in terraform.tfvars.json."
+  description = "Email address that receives the DevOps build and deployment notifications. OCI sends it a mail to confirm the subscription."
   type        = string
 
   validation {

@@ -20,8 +20,6 @@
 #
 # Environment:
 #   AFP_CONFIG_DIR  Directory holding terraform.tfvars.json (required).
-#   AFP_NOTIFICATION_EMAIL  Address for the DevOps notifications (main plan;
-#                   never written into a file, since the config is in git).
 #   OCI_CLI_PROFILE, OCI_CLI_AUTH, ...  Passed through to the OCI CLI.
 #
 # Nothing is kept locally: the stack is found by its name in the tenancy root,
