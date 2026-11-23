@@ -1,7 +1,8 @@
 # Stack "stack-afp-main": everything that is created and destroyed repeatedly.
-# The compartment, vault and key come from the base stack (terraform/base)
-# and are looked up by name, so no values are passed between the stacks.
-# The names must match terraform/modules/iam and terraform/modules/vault.
+# The compartment, vault, key and DNS zone come from the base stack
+# (terraform/base) and are looked up by name, so no values are passed between
+# the stacks. The names must match terraform/modules/iam, terraform/modules/vault
+# and the variable dns_zone of the base stack.
 
 data "oci_identity_compartments" "afp" {
   compartment_id = var.tenancy_ocid
@@ -21,6 +22,22 @@ locals {
   compartment_name = "compartment-afp-main"
   # Also written in terraform/modules/compute/afp-bootstrap.sh.
   bucket_name = "bucket-afp-main"
+  # Each project is served at <name>.<dns_zone>.
+  domains = { for p in var.projects : p.name => "${p.name}.${var.dns_zone}" }
+}
+
+data "oci_dns_zones" "afp" {
+  compartment_id = local.compartment_id
+  name           = var.dns_zone
+  zone_type      = "PRIMARY"
+  scope          = "GLOBAL"
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.zones) == 1
+      error_message = "DNS zone \"${var.dns_zone}\" not found in compartment-afp-main; set the same dns_zone for both stacks and apply the base stack first."
+    }
+  }
 }
 
 data "oci_kms_vaults" "afp" {
@@ -125,7 +142,7 @@ module "storage" {
     compartment_id = local.compartment_id
     projects = [for p in var.projects : {
       name              = p.name
-      domain            = lower(p.domain)
+      domain            = local.domains[p.name]
       port              = p.port
       secret_id         = module.secrets.project_secrets[p.name].secret_id
       manual_secret_ids = module.secrets.project_secrets[p.name].manual_secret_ids
@@ -158,6 +175,21 @@ module "vm" {
     module.policies.policy_id,
     module.storage.afp_json_id,
   ]
+}
+
+# Every project's name points at the VM it runs on (only "main" for now).
+resource "oci_dns_rrset" "project" {
+  for_each        = local.domains
+  zone_name_or_id = data.oci_dns_zones.afp.zones[0].id
+  domain          = each.value
+  rtype           = "A"
+
+  items {
+    domain = each.value
+    rtype  = "A"
+    rdata  = module.vm.public_ip
+    ttl    = 300
+  }
 }
 
 # Pipelines only for the projects with a repository; the others are deployed

@@ -69,3 +69,7 @@ output "pipelines" {
     webhook_secret_name = module.secrets.webhook_secrets[name].name
   } }
 }
+
+output "domains" {
+  value = local.domains
+}

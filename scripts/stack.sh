@@ -43,7 +43,7 @@ usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d' >&2; exit 2; }
 case "${1:-}" in
   base)
     STACK_NAME="stack-afp-base"; WORKDIR="base"; MAKE_PREFIX="base-"
-    VARIABLE_KEYS="tenancy_ocid,region"
+    VARIABLE_KEYS="tenancy_ocid,region,dns_zone"
     ;;
   main)
     STACK_NAME="stack-afp-main"; WORKDIR="main"; MAKE_PREFIX=""

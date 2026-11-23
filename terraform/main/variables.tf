@@ -122,16 +122,14 @@ variable "projects" {
       repository  Optional. GitHub repository (https://github.com/<owner>/<repo>). When set,
                   make apply creates the project's build and deployment pipelines and its
                   GitHub trigger; without it, the project is deployed with make deploy.
-      domain      Domain name served by Caddy for the project.
       port        Optional, default 8080. Port on which the project's entrance service
-                  listens for HTTP; Caddy proxies the domain to <name>:<port>.
+                  listens for HTTP; Caddy proxies <name>.<dns_zone> to <name>:<port>.
       vm          VM to run on; only "main" for now.
       secrets     [{name, how}]: name in upper case (not AFP_*), how is "generate" or "manual".
   EOT
   type = list(object({
     name       = string
     repository = optional(string)
-    domain     = string
     port       = optional(number, 8080)
     vm         = string
     secrets = optional(list(object({
@@ -151,11 +149,6 @@ variable "projects" {
   validation {
     condition     = length(distinct([for p in var.projects : replace(p.name, "-", "_")])) == length(var.projects)
     error_message = "projects[*].name must be unique, also after replacing \"-\" with \"_\" (the DB name)."
-  }
-
-  validation {
-    condition     = length(distinct([for p in var.projects : lower(p.domain)])) == length(var.projects) && alltrue([for p in var.projects : can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", lower(p.domain)))])
-    error_message = "projects[*].domain must be a valid domain name, unique among the projects."
   }
 
   validation {
@@ -184,4 +177,9 @@ variable "projects" {
     condition     = alltrue([for p in var.projects : length(distinct([for s in p.secrets : s.name])) == length(p.secrets)])
     error_message = "projects[*].secrets: names must be unique within a project."
   }
+}
+
+variable "dns_zone" {
+  description = "Public DNS zone of the platform, created by the base stack (the same value as there). make apply points <name>.<dns_zone> of each project at the VM."
+  type        = string
 }
