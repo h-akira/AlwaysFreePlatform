@@ -1,8 +1,5 @@
-# Private notes and scratch space (never publish)
-pre-research/
+# Scratch space (never publish; working notes are kept outside the repository)
 tmp/
-learning/
-progress/
 
 # Secrets and environment-specific values
 .env
