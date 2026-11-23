@@ -54,7 +54,7 @@ DB_PORT="$(out db_port)"
 DB_USER="$(out db_admin_username)"
 SECRET_ID="$(out db_admin_secret_id)"
 
-bastion_create_session "$BASTION_ID" afp-db-tunnel "$DB_IP" "$DB_PORT" "$PUBLIC_KEY" "$SESSION_TTL"
+bastion_create_session "$BASTION_ID" session-afp-db-tunnel "$DB_IP" "$DB_PORT" "$PUBLIC_KEY" "$SESSION_TTL"
 
 cat <<EOF
 

@@ -14,7 +14,7 @@
 #   6. fetch the platform code named in platform.json, then afp install / sync
 set -euo pipefail
 
-BUCKET="afp" # must match the bucket name in terraform/main
+BUCKET="bucket-afp-main" # must match the bucket name in terraform/main
 AFP_DIR="/opt/afp"
 SWAP_FILE="/swapfile"
 SWAP_MB=2048

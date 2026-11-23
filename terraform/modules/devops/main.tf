@@ -51,7 +51,7 @@ locals {
 
 resource "oci_ons_notification_topic" "devops" {
   compartment_id = var.compartment_id
-  name           = "afp-devops"
+  name           = "topic-afp-devops"
   description    = "AlwaysFreePlatform: build and deployment notifications"
 }
 
@@ -65,7 +65,7 @@ resource "oci_ons_subscription" "email" {
 
 resource "oci_devops_project" "afp" {
   compartment_id = var.compartment_id
-  name           = "afp"
+  name           = "devops-afp-main"
   description    = "AlwaysFreePlatform"
 
   notification_config {
@@ -76,11 +76,11 @@ resource "oci_devops_project" "afp" {
 # Build and deployment logs; without them a run shows no output.
 resource "oci_logging_log_group" "devops" {
   compartment_id = var.compartment_id
-  display_name   = "afp-devops"
+  display_name   = "loggroup-afp-devops"
 }
 
 resource "oci_logging_log" "devops" {
-  display_name       = "afp-devops"
+  display_name       = "log-afp-devops"
   log_group_id       = oci_logging_log_group.devops.id
   log_type           = "SERVICE"
   is_enabled         = true
@@ -101,7 +101,7 @@ resource "oci_devops_connection" "github" {
   project_id      = oci_devops_project.afp.id
   connection_type = "GITHUB_ACCESS_TOKEN"
   access_token    = var.github_token_secret_id
-  display_name    = "github"
+  display_name    = "connection-afp-github"
   description     = "GitHub, with the platform's token (ADR 023)"
 }
 
@@ -109,7 +109,7 @@ resource "oci_devops_connection" "github" {
 resource "oci_devops_deploy_environment" "vm" {
   project_id              = oci_devops_project.afp.id
   deploy_environment_type = "COMPUTE_INSTANCE_GROUP"
-  display_name            = "vm-main"
+  display_name            = "env-afp-main"
 
   compute_instance_group_selectors {
     items {
@@ -123,14 +123,14 @@ resource "oci_devops_deploy_environment" "vm" {
 # through resource principals; every one in the compartment is a member.
 resource "oci_identity_dynamic_group" "devops" {
   compartment_id = var.tenancy_ocid
-  name           = "afp-devops"
+  name           = "dg-afp-devops"
   description    = "AlwaysFreePlatform DevOps resources"
   matching_rule  = "ALL {resource.compartment.id = '${var.compartment_id}'}"
 }
 
 resource "oci_identity_policy" "devops" {
   compartment_id = var.compartment_id
-  name           = "afp-devops"
+  name           = "policy-afp-devops"
   description    = "What the AlwaysFreePlatform DevOps resources may do"
   statements = [
     # The connection and the build read the GitHub token, and no other secret.
@@ -154,7 +154,7 @@ resource "oci_identity_policy" "devops" {
 resource "oci_devops_deploy_pipeline" "project" {
   for_each     = local.projects
   project_id   = oci_devops_project.afp.id
-  display_name = "afp-${each.key}-deploy"
+  display_name = "deploypipeline-afp-${each.key}"
   description  = "Run afp deploy for ${each.key} on the VM, with the tag as AFP_TAG"
 
   deploy_pipeline_parameters {
@@ -173,7 +173,7 @@ resource "oci_devops_deploy_pipeline" "project" {
 resource "oci_devops_deploy_artifact" "spec" {
   for_each                   = local.projects
   project_id                 = oci_devops_project.afp.id
-  display_name               = "afp-${each.key}-deployment-spec"
+  display_name               = "artifact-afp-${each.key}-spec"
   deploy_artifact_type       = "DEPLOYMENT_SPEC"
   argument_substitution_mode = "SUBSTITUTE_PLACEHOLDERS"
 
@@ -196,7 +196,7 @@ resource "oci_devops_deploy_stage" "project" {
   for_each                                     = local.projects
   deploy_pipeline_id                           = oci_devops_deploy_pipeline.project[each.key].id
   deploy_stage_type                            = "COMPUTE_INSTANCE_GROUP_ROLLING_DEPLOYMENT"
-  display_name                                 = "afp-deploy"
+  display_name                                 = "stage-afp-deploy"
   compute_instance_group_deploy_environment_id = oci_devops_deploy_environment.vm.id
   deployment_spec_deploy_artifact_id           = oci_devops_deploy_artifact.spec[each.key].id
 
@@ -220,7 +220,7 @@ resource "oci_devops_deploy_stage" "project" {
 resource "oci_devops_build_pipeline" "project" {
   for_each     = local.projects
   project_id   = oci_devops_project.afp.id
-  display_name = "afp-${each.key}-build"
+  display_name = "buildpipeline-afp-${each.key}"
   description  = "Build ${each.key} from ${each.value.repository}"
 
   build_pipeline_parameters {
@@ -244,7 +244,7 @@ resource "oci_devops_build_pipeline_stage" "build" {
   for_each                  = local.projects
   build_pipeline_id         = oci_devops_build_pipeline.project[each.key].id
   build_pipeline_stage_type = "BUILD"
-  display_name              = "build"
+  display_name              = "stage-afp-build"
   # An update sends the description; DevOps rejects an empty one.
   description          = "Release the tag on the head of release for the VM to build"
   image                = "OL8_X86_64_STANDARD_10"
@@ -280,7 +280,7 @@ resource "oci_devops_build_pipeline_stage" "deploy" {
   for_each                       = local.projects
   build_pipeline_id              = oci_devops_build_pipeline.project[each.key].id
   build_pipeline_stage_type      = "TRIGGER_DEPLOYMENT_PIPELINE"
-  display_name                   = "deploy"
+  display_name                   = "stage-afp-deploy"
   deploy_pipeline_id             = oci_devops_deploy_pipeline.project[each.key].id
   is_pass_all_parameters_enabled = true
 

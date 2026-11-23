@@ -24,7 +24,7 @@ variable "https_public" {
 
 resource "oci_core_vcn" "afp" {
   compartment_id = var.compartment_id
-  display_name   = "afp"
+  display_name   = "vcn-afp-main"
   cidr_blocks    = [var.vcn_cidr]
   dns_label      = "afp"
 }
@@ -35,7 +35,7 @@ resource "oci_core_vcn" "afp" {
 resource "oci_core_security_list" "db" {
   compartment_id = var.compartment_id
   vcn_id         = oci_core_vcn.afp.id
-  display_name   = "afp-db"
+  display_name   = "seclist-afp-db"
 
   dynamic "egress_security_rules" {
     for_each = [3306, 33060]
@@ -83,7 +83,7 @@ resource "oci_core_security_list" "db" {
 resource "oci_core_subnet" "db" {
   compartment_id             = var.compartment_id
   vcn_id                     = oci_core_vcn.afp.id
-  display_name               = "afp-db"
+  display_name               = "subnet-afp-db"
   cidr_block                 = var.db_subnet_cidr
   dns_label                  = "db"
   prohibit_public_ip_on_vnic = true
@@ -93,13 +93,13 @@ resource "oci_core_subnet" "db" {
 resource "oci_core_internet_gateway" "afp" {
   compartment_id = var.compartment_id
   vcn_id         = oci_core_vcn.afp.id
-  display_name   = "afp"
+  display_name   = "igw-afp-main"
 }
 
 resource "oci_core_route_table" "vm" {
   compartment_id = var.compartment_id
   vcn_id         = oci_core_vcn.afp.id
-  display_name   = "afp-vm"
+  display_name   = "rt-afp-vm"
 
   route_rules {
     destination       = "0.0.0.0/0"
@@ -116,7 +116,7 @@ locals {
 resource "oci_core_security_list" "vm" {
   compartment_id = var.compartment_id
   vcn_id         = oci_core_vcn.afp.id
-  display_name   = "afp-vm"
+  display_name   = "seclist-afp-vm"
 
   egress_security_rules {
     protocol    = "all"
@@ -167,7 +167,7 @@ resource "oci_core_security_list" "vm" {
 resource "oci_core_subnet" "vm" {
   compartment_id    = var.compartment_id
   vcn_id            = oci_core_vcn.afp.id
-  display_name      = "afp-vm"
+  display_name      = "subnet-afp-vm"
   cidr_block        = var.vm_subnet_cidr
   dns_label         = "vm"
   route_table_id    = oci_core_route_table.vm.id
@@ -176,7 +176,7 @@ resource "oci_core_subnet" "vm" {
 
 resource "oci_bastion_bastion" "afp" {
   compartment_id               = var.compartment_id
-  name                         = "afp"
+  name                         = "bastionafpmain" # only letters and digits are allowed
   bastion_type                 = "STANDARD"
   target_subnet_id             = oci_core_subnet.db.id
   client_cidr_block_allow_list = var.home_cidrs

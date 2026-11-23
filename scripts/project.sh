@@ -8,7 +8,7 @@
 #             must be clean and carry exactly one tag, which becomes the
 #             version. Builds the services with build: for the VM's CPU type
 #             (stack output vm_arch), pushes them to OCIR (creating the
-#             repositories afp/<project>/<service> when missing), puts
+#             repositories repo-afp-<project>/<service> when missing), puts
 #             compose.afp.yaml into the bucket, and runs afp deploy on the VM
 #             through Run Command, waiting for it.
 #   rollback  Runs afp rollback on the VM (previous version; the DB stays).
@@ -94,7 +94,7 @@ cmd_deploy() {
   local afp
   afp="$(afp_json)"
   printf '%s' "$afp" | "${PY[@]}" has-project "$project" || exit 1
-  prefix="$(printf '%s' "$afp" | "${PY[@]}" json-get image_prefix_base)/$project"
+  prefix="$(printf '%s' "$afp" | "${PY[@]}" json-get image_prefix_base)/repo-afp-$project"
   registry="${prefix%%/*}"
 
   # Values that the build needs; the platform's other values (docs/04_using.md

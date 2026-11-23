@@ -8,7 +8,7 @@ OCI のコンテナ・レジストリ（Oracle Cloud Infrastructure Registry）�
 ## 1. 名前
 
 - レジストリは `<リージョンのキー>.ocir.io`（例: `iad.ocir.io`）。イメージの名前は `<リージョンのキー>.ocir.io/<Object Storage の namespace>/<リポジトリ>:<タグ>`。
-- リポジトリの名前には `/` を含められる（例: `afp/app-a/web`）。
+- リポジトリの名前には `/` を含められる（例: `repo-afp-app-a/web`）。
 - 決めたコンパートメントにリポジトリを置くには、push の前に `oci artifacts container repository create --compartment-id <コンパートメント> --display-name <リポジトリ> --is-public false` で作る（作ったリポジトリへの push と pull が通った。実測）。
 
 ## 2. ログイン

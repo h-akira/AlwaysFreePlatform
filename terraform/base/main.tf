@@ -1,4 +1,4 @@
-# Stack "afp-base": only what Terraform destroy cannot remove.
+# Stack "stack-afp-base": only what Terraform destroy cannot remove.
 # A deleted vault stays PENDING_DELETION inside its compartment, so neither can
 # be destroyed and recreated repeatedly. Everything else is in terraform/main.
 

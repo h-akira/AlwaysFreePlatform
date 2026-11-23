@@ -44,7 +44,7 @@ resource "oci_vault_secret" "db_admin_password" {
   compartment_id = var.compartment_id
   vault_id       = var.vault_id
   key_id         = var.key_id
-  secret_name    = "afp-db-admin-password-${random_id.suffix.hex}"
+  secret_name    = "secret-afp-db-admin-password-${random_id.suffix.hex}"
   description    = "Administrator password of the MySQL HeatWave DB system"
 
   secret_content {
@@ -60,7 +60,7 @@ resource "oci_vault_secret" "github_token" {
   compartment_id = var.compartment_id
   vault_id       = var.vault_id
   key_id         = var.key_id
-  secret_name    = "afp-github-token-${random_id.suffix.hex}"
+  secret_name    = "secret-afp-github-token-${random_id.suffix.hex}"
   description    = "GitHub token for OCI DevOps (set the value by hand)"
 
   secret_content {
@@ -122,7 +122,7 @@ resource "oci_vault_secret" "project" {
   compartment_id = var.compartment_id
   vault_id       = var.vault_id
   key_id         = var.key_id
-  secret_name    = "afp-${each.key}-${random_id.project[each.key].hex}"
+  secret_name    = "secret-afp-${each.key}-${random_id.project[each.key].hex}"
   description    = "AlwaysFreePlatform project ${each.key}: DB password and generated secrets"
 
   secret_content {
@@ -141,7 +141,7 @@ resource "oci_vault_secret" "manual" {
   compartment_id = var.compartment_id
   vault_id       = var.vault_id
   key_id         = var.key_id
-  secret_name    = "afp-${each.value.project}-${each.value.name}-${random_id.manual[each.key].hex}"
+  secret_name    = "secret-afp-${each.value.project}-${each.value.name}-${random_id.manual[each.key].hex}"
   description    = "AlwaysFreePlatform project ${each.value.project}: ${each.value.name} (set the value by hand)"
 
   secret_content {
@@ -168,7 +168,7 @@ resource "oci_vault_secret" "webhook" {
   compartment_id = var.compartment_id
   vault_id       = var.vault_id
   key_id         = var.key_id
-  secret_name    = "afp-${each.key}-webhook-${random_id.webhook[each.key].hex}"
+  secret_name    = "secret-afp-${each.key}-webhook-${random_id.webhook[each.key].hex}"
   description    = "AlwaysFreePlatform project ${each.key}: webhook secret of its GitHub trigger (set by make apply)"
 
   secret_content {

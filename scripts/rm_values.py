@@ -129,9 +129,9 @@ def command_content(script: str) -> dict[str, Any]:
 def build_services(config: dict[str, Any], prefix: str) -> list[tuple[str, str]]:
     """Services that make deploy builds, with their OCIR repository names.
 
-    prefix is AFP_IMAGE_PREFIX, e.g. iad.ocir.io/<namespace>/afp/<project>;
+    prefix is AFP_IMAGE_PREFIX, e.g. iad.ocir.io/<namespace>/repo-afp-<project>;
     the repository is the image path after the namespace, without the tag
-    (afp/<project>/<name>).
+    (repo-afp-<project>/<name>).
     """
     result: list[tuple[str, str]] = []
     for name, service in sorted((config.get("services") or {}).items()):

@@ -55,4 +55,4 @@ def test_cli_failure_is_not_taken_as_missing_stack(env: dict[str, str], tmp_path
     assert "cannot list stacks" in result.stderr
     assert "stack not found" not in result.stderr
     log = (tmp_path / "oci.log").read_text()
-    assert "--display-name afp " in log
+    assert "--display-name stack-afp-main " in log

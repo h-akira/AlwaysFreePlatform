@@ -14,12 +14,13 @@ from typing import Any
 from afp.errors import AfpError
 
 # Must match the bucket name in terraform/main/main.tf.
-BUCKET = "afp"
+BUCKET = "bucket-afp-main"
 
 PROJECT_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$")
 DOMAIN = re.compile(r"^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 SECRET_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 HOST = re.compile(r"^[A-Za-z0-9.-]+$")
+DEFAULT_PORT = 8080
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,8 @@ class Project:
     domain: str
     secret_id: str
     manual_secret_ids: dict[str, str] = field(default_factory=dict)
+    # Where the entrance service listens for HTTP (older afp.json files lack it).
+    port: int = DEFAULT_PORT
 
     @property
     def db_name(self) -> str:
@@ -80,7 +83,12 @@ def _project(data: Any, index: int) -> Project:
         for k, v in manual.items()
     ):
         raise AfpError(f"afp.json: invalid manual_secret_ids of project {name}")
-    return Project(name=name, domain=domain, secret_id=_str(data, "secret_id", where), manual_secret_ids=dict(manual))
+    port = data.get("port", DEFAULT_PORT)
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise AfpError(f"afp.json: invalid port {port!r} of project {name}")
+    return Project(
+        name=name, domain=domain, secret_id=_str(data, "secret_id", where), manual_secret_ids=dict(manual), port=port
+    )
 
 
 def parse(text: str) -> Config:

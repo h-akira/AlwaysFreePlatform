@@ -33,7 +33,7 @@ def test_values_go_through_the_environment(tmp_path: Path) -> None:
     deploy(world, tmp_path, "app-a", "v1")
     [up] = [c for c in world.calls if c["args"][:4] == ["docker", "compose", "-p", "app-a"] and "up" in c["args"]]
     assert up["env"] == {
-        "AFP_IMAGE_PREFIX": "iad.ocir.io/ns/afp/app-a",
+        "AFP_IMAGE_PREFIX": "iad.ocir.io/ns/repo-afp-app-a",
         "AFP_TAG": "v1",
         "AFP_PROJECT": "app-a",
         "AFP_DOMAIN": "app-a.example.net",
@@ -177,7 +177,7 @@ def test_deploy_builds_and_pushes_when_the_release_has_source(tmp_path: Path) ->
     world.source("hello", "v1")
     summary = deploy(world, tmp_path, "hello", "v1")
     assert summary.startswith("hello is now v1")
-    assert world.repositories == {"afp/hello/web"}  # only the service with build:
+    assert world.repositories == {"repo-afp-hello/web"}  # only the service with build:
     assert world.pushed == [("hello", "v1", ["web"])]
     names = [" ".join(c["args"]) for c in world.calls]
     build = next(i for i, n in enumerate(names) if n.startswith("docker compose -p hello") and " build " in f"{n} ")
@@ -264,12 +264,12 @@ def test_build_needs_the_compartment(tmp_path: Path) -> None:
 
 
 def test_build_services() -> None:
-    prefix = "iad.ocir.io/ns/afp/app-a"
+    prefix = "iad.ocir.io/ns/repo-afp-app-a"
     config = {"services": {
         "web": {"build": {"context": "."}, "image": f"{prefix}/web:v3"},
         "worker": {"build": {"context": "w"}, "image": f"{prefix}/worker:v3"},
         "db": {"image": "mysql:8"},
     }}
-    assert pm.build_services(config, prefix) == [("web", "afp/app-a/web"), ("worker", "afp/app-a/worker")]
+    assert pm.build_services(config, prefix) == [("web", "repo-afp-app-a/web"), ("worker", "repo-afp-app-a/worker")]
     with pytest.raises(AfpError, match="nothing to build"):
         pm.build_services({"services": {"db": {"image": "mysql:8"}}}, prefix)

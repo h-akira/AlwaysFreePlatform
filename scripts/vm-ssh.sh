@@ -46,7 +46,7 @@ load_outputs
 BASTION_ID="$(out bastion_id)"
 VM_IP="$(out vm_private_ip)"
 
-bastion_create_session "$BASTION_ID" afp-vm-ssh "$VM_IP" 22 "$PUBLIC_KEY" "$SESSION_TTL"
+bastion_create_session "$BASTION_ID" session-afp-vm-ssh "$VM_IP" 22 "$PUBLIC_KEY" "$SESSION_TTL"
 
 # The VM's host key changes whenever it is recreated; the path to it is
 # already authenticated by the Bastion, so a throwaway known_hosts is used.

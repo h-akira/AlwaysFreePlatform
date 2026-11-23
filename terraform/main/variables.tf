@@ -123,6 +123,8 @@ variable "projects" {
                   make apply creates the project's build and deployment pipelines and its
                   GitHub trigger; without it, the project is deployed with make deploy.
       domain      Domain name served by Caddy for the project.
+      port        Optional, default 8080. Port on which the project's entrance service
+                  listens for HTTP; Caddy proxies the domain to <name>:<port>.
       vm          VM to run on; only "main" for now.
       secrets     [{name, how}]: name in upper case (not AFP_*), how is "generate" or "manual".
   EOT
@@ -130,6 +132,7 @@ variable "projects" {
     name       = string
     repository = optional(string)
     domain     = string
+    port       = optional(number, 8080)
     vm         = string
     secrets = optional(list(object({
       name = string
@@ -158,6 +161,11 @@ variable "projects" {
   validation {
     condition     = alltrue([for p in var.projects : p.repository == null ? true : can(regex("^https://github\\.com/[^/]+/[^/]+$", p.repository))])
     error_message = "projects[*].repository must look like https://github.com/<owner>/<repo> (no .git, no trailing slash), or be left out."
+  }
+
+  validation {
+    condition     = alltrue([for p in var.projects : p.port == floor(p.port) && p.port >= 1 && p.port <= 65535])
+    error_message = "projects[*].port must be an integer from 1 to 65535."
   }
 
   validation {

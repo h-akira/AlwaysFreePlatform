@@ -5,7 +5,7 @@ variable "tenancy_ocid" {
 # All platform resources live in this compartment.
 resource "oci_identity_compartment" "afp" {
   compartment_id = var.tenancy_ocid
-  name           = "afp"
+  name           = "compartment-afp-main"
   description    = "AlwaysFreePlatform"
   # Deletable while the platform is being tested.
   enable_delete = true

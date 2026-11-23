@@ -98,7 +98,7 @@ class Oci:
             raise AfpError(f"secret {secret_id} is not base64 text") from e
 
     def ensure_repository(self, compartment_id: str, name: str) -> None:
-        """Create the private OCIR repository name (e.g. afp/hello/web) if missing."""
+        """Create the private OCIR repository name (e.g. repo-afp-hello/web) if missing."""
         result = self.runner.run(
             self._cmd(
                 "artifacts", "container", "repository", "list", "--compartment-id", compartment_id,

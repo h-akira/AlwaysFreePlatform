@@ -33,10 +33,10 @@ def afp_json(projects: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     return {
         "region": REGION,
         "namespace": "ns",
-        "bucket": "afp",
+        "bucket": "bucket-afp-main",
         "platform_repository": "https://github.com/example/platform",
         "db": {"host": "10.0.1.10", "port": 3306, "admin_user": "afpadmin", "admin_secret_id": "ocid1.vaultsecret.oc1..admin"},
-        "image_prefix_base": "iad.ocir.io/ns/afp",
+        "image_prefix_base": "iad.ocir.io/ns",
         "compartment_id": "ocid1.compartment.oc1..afp",
         "projects": projects
         if projects is not None

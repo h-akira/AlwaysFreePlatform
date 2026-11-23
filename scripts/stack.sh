@@ -2,8 +2,8 @@
 # Send plan/apply jobs for terraform/ to OCI Resource Manager.
 #
 # Usage: stack.sh base|main plan|apply|destroy|outputs
-#   base     Stack "afp-base" (terraform/base): what destroy cannot remove.
-#   main     Stack "afp" (terraform/main): everything else.
+#   base     Stack "stack-afp-base" (terraform/base): what destroy cannot remove.
+#   main     Stack "stack-afp-main" (terraform/main): everything else.
 #
 #   plan     Upload terraform/ at HEAD and the variables, then run a plan job.
 #   apply    Apply exactly the latest plan job, if it was made from HEAD.
@@ -44,11 +44,11 @@ usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d' >&2; exit 2; }
 # Each stack runs one root module of terraform/; both share terraform/modules/.
 case "${1:-}" in
   base)
-    STACK_NAME="afp-base"; WORKDIR="base"; MAKE_PREFIX="base-"
+    STACK_NAME="stack-afp-base"; WORKDIR="base"; MAKE_PREFIX="base-"
     VARIABLE_KEYS="tenancy_ocid,region"
     ;;
   main)
-    STACK_NAME="afp"; WORKDIR="main"; MAKE_PREFIX=""
+    STACK_NAME="stack-afp-main"; WORKDIR="main"; MAKE_PREFIX=""
     VARIABLE_KEYS=""
     ;;
   *) usage ;;

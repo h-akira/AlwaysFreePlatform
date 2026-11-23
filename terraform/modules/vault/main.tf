@@ -6,13 +6,13 @@ variable "compartment_id" {
 # compartment for days, which blocks deleting the compartment.
 resource "oci_kms_vault" "afp" {
   compartment_id = var.compartment_id
-  display_name   = "afp"
+  display_name   = "vault-afp-main"
   vault_type     = "DEFAULT"
 }
 
 resource "oci_kms_key" "afp" {
   compartment_id      = var.compartment_id
-  display_name        = "afp"
+  display_name        = "key-afp-main"
   management_endpoint = oci_kms_vault.afp.management_endpoint
   protection_mode     = "SOFTWARE"
 

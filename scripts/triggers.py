@@ -19,7 +19,7 @@ Usage: triggers.py prune|create|delete-all
   delete-all  Before destroy: delete every trigger of the DevOps project.
 
 Reads the main stack outputs (KEY=VALUE lines, as `stack.sh main outputs`
-prints them) from stdin. A trigger is found by its name, afp-<project>; what
+prints them) from stdin. A trigger is found by its name, trigger-afp-<project>; what
 it filters is fixed here, not in the settings.
 
 Environment:
@@ -49,7 +49,7 @@ class TriggerError(Exception):
 
 
 def trigger_name(project: str) -> str:
-    return f"afp-{project}"
+    return f"trigger-afp-{project}"
 
 
 def parse_outputs(text: str) -> dict[str, str]:

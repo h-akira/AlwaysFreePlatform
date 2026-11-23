@@ -1,4 +1,4 @@
-"""Caddy, the entrance: one site per project domain, proxied to <project>:8080.
+"""Caddy, the entrance: one site per project domain, proxied to <project>:<port>.
 
 The Caddyfile directory (not the file) is mounted into the container, so that
 replacing the file by rename is seen by the container.
@@ -18,7 +18,7 @@ COMPOSE_PROJECT = "afp-caddy"
 def render(projects: list[Project]) -> str:
     lines = ["# Written by afp sync from afp.json. Do not edit.", ""]
     for p in sorted(projects, key=lambda p: p.domain):
-        lines += [f"{p.domain} {{", f"\treverse_proxy {p.name}:8080", "}", ""]
+        lines += [f"{p.domain} {{", f"\treverse_proxy {p.name}:{p.port}", "}", ""]
     return "\n".join(lines)
 
 

@@ -1,26 +1,26 @@
-# Stack "afp": everything that is created and destroyed repeatedly.
+# Stack "stack-afp-main": everything that is created and destroyed repeatedly.
 # The compartment, vault and key come from the base stack (terraform/base)
 # and are looked up by name, so no values are passed between the stacks.
-# The names ("afp") must match terraform/modules/iam and terraform/modules/vault.
+# The names must match terraform/modules/iam and terraform/modules/vault.
 
 data "oci_identity_compartments" "afp" {
   compartment_id = var.tenancy_ocid
-  name           = "afp"
+  name           = "compartment-afp-main"
   state          = "ACTIVE"
 
   lifecycle {
     postcondition {
       condition     = length(self.compartments) == 1
-      error_message = "Compartment \"afp\" not found; apply the base stack first (make base-plan, make base-apply)."
+      error_message = "Compartment \"compartment-afp-main\" not found; apply the base stack first (make base-plan, make base-apply)."
     }
   }
 }
 
 locals {
   compartment_id   = data.oci_identity_compartments.afp.compartments[0].id
-  compartment_name = "afp"
+  compartment_name = "compartment-afp-main"
   # Also written in terraform/modules/compute/afp-bootstrap.sh.
-  bucket_name = "afp"
+  bucket_name = "bucket-afp-main"
 }
 
 data "oci_kms_vaults" "afp" {
@@ -29,7 +29,7 @@ data "oci_kms_vaults" "afp" {
   # Older vaults of the same name may be PENDING_DELETION.
   filter {
     name   = "display_name"
-    values = ["afp"]
+    values = ["vault-afp-main"]
   }
   filter {
     name   = "state"
@@ -39,7 +39,7 @@ data "oci_kms_vaults" "afp" {
   lifecycle {
     postcondition {
       condition     = length(self.vaults) == 1
-      error_message = "Exactly one ACTIVE vault \"afp\" must exist; apply the base stack first."
+      error_message = "Exactly one ACTIVE vault \"vault-afp-main\" must exist; apply the base stack first."
     }
   }
 }
@@ -50,7 +50,7 @@ data "oci_kms_keys" "afp" {
 
   filter {
     name   = "display_name"
-    values = ["afp"]
+    values = ["key-afp-main"]
   }
   filter {
     name   = "state"
@@ -60,7 +60,7 @@ data "oci_kms_keys" "afp" {
   lifecycle {
     postcondition {
       condition     = length(self.keys) == 1
-      error_message = "Exactly one ENABLED key \"afp\" must exist in vault \"afp\"; apply the base stack first."
+      error_message = "Exactly one ENABLED key \"key-afp-main\" must exist in vault \"vault-afp-main\"; apply the base stack first."
     }
   }
 }
@@ -120,12 +120,13 @@ module "storage" {
       admin_user      = var.db_admin_username
       admin_secret_id = module.secrets.db_admin_secret_id
     }
-    image_prefix_base = "${lower(data.oci_identity_regions.this.regions[0].key)}.ocir.io/${data.oci_objectstorage_namespace.this.namespace}/afp"
+    image_prefix_base = "${lower(data.oci_identity_regions.this.regions[0].key)}.ocir.io/${data.oci_objectstorage_namespace.this.namespace}"
     # Where afp creates OCIR repositories when it builds on the VM.
     compartment_id = local.compartment_id
     projects = [for p in var.projects : {
       name              = p.name
       domain            = lower(p.domain)
+      port              = p.port
       secret_id         = module.secrets.project_secrets[p.name].secret_id
       manual_secret_ids = module.secrets.project_secrets[p.name].manual_secret_ids
     }]

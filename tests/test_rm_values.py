@@ -175,7 +175,7 @@ def test_wrapped_script_gives_up_without_running(sudo_env: dict[str, str]) -> No
     assert "ran" not in result.stdout and "first boot" in result.stdout
 
 
-PREFIX = "iad.ocir.io/ns/afp/hello"
+PREFIX = "iad.ocir.io/ns/repo-afp-hello"
 
 
 def test_build_services_takes_only_built_ones() -> None:
@@ -184,10 +184,10 @@ def test_build_services_takes_only_built_ones() -> None:
         "worker": {"build": {"context": "."}, "image": f"{PREFIX}/worker:v1"},
         "redis": {"image": "redis:7"},
     }}
-    assert rm_values.build_services(config, PREFIX) == [("web", "afp/hello/web"), ("worker", "afp/hello/worker")]
+    assert rm_values.build_services(config, PREFIX) == [("web", "repo-afp-hello/web"), ("worker", "repo-afp-hello/worker")]
 
 
-@pytest.mark.parametrize("image", ["", "web:v1", f"{PREFIX}/web", "iad.ocir.io/ns/afp/other/web:v1"])
+@pytest.mark.parametrize("image", ["", "web:v1", f"{PREFIX}/web", "iad.ocir.io/ns/repo-afp-other/web:v1"])
 def test_build_services_refuses_other_images(image: str) -> None:
     with pytest.raises(ValueError):
         rm_values.build_services({"services": {"web": {"build": {}, "image": image}}}, PREFIX)

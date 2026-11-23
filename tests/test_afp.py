@@ -34,6 +34,12 @@ def test_parse_afp_json() -> None:
     assert [p.name for p in cfg.projects] == ["hello", "app-a"]
     assert cfg.projects[1].db_name == "app_a"
     assert cfg.projects[1].manual_secret_ids == {"API_KEY": "ocid1.vaultsecret.oc1..apikey"}
+    assert cfg.projects[0].port == 8080  # the default when afp.json has no port
+
+
+def test_parse_port() -> None:
+    project = {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": 3000}
+    assert config.parse(json.dumps(afp_json([project]))).projects[0].port == 3000
 
 
 def test_parse_without_projects() -> None:
@@ -52,6 +58,10 @@ def test_parse_without_projects() -> None:
         {"name": "x", "domain": "x.example.com {\n}", "secret_id": "s"},
         {"name": "x", "domain": "x.example.com", "secret_id": ""},
         {"name": "x", "domain": "x.example.com", "secret_id": "s", "manual_secret_ids": {"AFP_X": "s"}},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": 0},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": 65536},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": "8080"},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": True},
     ],
 )
 def test_parse_rejects_bad_projects(project: dict[str, Any]) -> None:
@@ -117,6 +127,12 @@ def test_render_caddyfile() -> None:
     assert "hello.example.com {\n\treverse_proxy hello:8080\n}" in text
     # Sorted by domain, so the file does not change with the list order.
     assert text == caddy.render(list(reversed(cfg.projects)))
+
+
+def test_render_caddyfile_with_port() -> None:
+    project = {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": 3000}
+    text = caddy.render(config.parse(json.dumps(afp_json([project]))).projects)
+    assert "x.example.com {\n\treverse_proxy x:3000\n}" in text
 
 
 def test_write_if_changed(tmp_path: Path) -> None:
@@ -313,8 +329,8 @@ def test_main_names_the_log_after_the_project(tmp_path: Path, capsys: pytest.Cap
 
 
 def test_bucket_name_matches_terraform() -> None:
-    assert 'bucket_name = "afp"' in (ROOT / "terraform" / "main" / "main.tf").read_text()
-    assert config.BUCKET == "afp"
+    assert 'bucket_name = "bucket-afp-main"' in (ROOT / "terraform" / "main" / "main.tf").read_text()
+    assert config.BUCKET == "bucket-afp-main"
 
 
 def test_main_uploads_the_log_with_the_real_runner(tmp_path: Path, capsys: pytest.CaptureFixture[str],
@@ -334,8 +350,8 @@ def test_main_uploads_the_log_with_the_real_runner(tmp_path: Path, capsys: pytes
     monkeypatch.setitem(cli.COMMANDS, "sync", cli.Command(work, "h", upload_log=True))
     assert cli.main(["sync"], paths=paths_in(tmp_path)) == 0
     out = capsys.readouterr().out
-    assert out.startswith("afp sync: OK: done\nlog: bucket afp: logs/")
-    assert "os object put -ns ns -bn afp --name logs/" in (tmp_path / "oci.log").read_text()
+    assert out.startswith("afp sync: OK: done\nlog: bucket bucket-afp-main: logs/")
+    assert "os object put -ns ns -bn bucket-afp-main --name logs/" in (tmp_path / "oci.log").read_text()
     assert not list((tmp_path / "log").iterdir())  # removed once uploaded
 
 
@@ -365,7 +381,7 @@ def test_only_a_404_counts_as_missing(tmp_path: Path) -> None:
             return super()._answer(args, env, stdout_path)
 
     ctx = make_ctx(tmp_path, World())
-    assert ctx.oci is not None and ctx.oci.get_object_or_none("afp", "state/none.json") is None
+    assert ctx.oci is not None and ctx.oci.get_object_or_none("bucket-afp-main", "state/none.json") is None
     ctx = make_ctx(tmp_path, Denied())
     with pytest.raises(AfpError, match="cannot read state/x.json"):
-        ctx.oci.get_object_or_none("afp", "state/x.json")  # type: ignore[union-attr]
+        ctx.oci.get_object_or_none("bucket-afp-main", "state/x.json")  # type: ignore[union-attr]

@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "project.sh"
-PREFIX_BASE = "iad.ocir.io/ns/afp"
+PREFIX_BASE = "iad.ocir.io/ns"
 
 FAKE_OCI = r'''
 import json, os, sys
@@ -30,7 +30,7 @@ if "stack list" in line:
 elif "get-stack-tf-state" in line:
     print(json.dumps({"outputs": {k: {"value": v} for k, v in {
         "vm_id": "ocid1.instance.oc1..vm", "compartment_id": "ocid1.compartment.oc1..c",
-        "bucket": "afp", "vm_arch": "arm64",
+        "bucket": "bucket-afp-main", "vm_arch": "arm64",
     }.items()}}))
 elif "os object get" in line:
     name = arg("--name")
@@ -55,7 +55,7 @@ elif "command create" in line:
 elif "command-execution get" in line:
     state = os.environ.get("FAKE_STATE", "SUCCEEDED")
     code = 0 if state == "SUCCEEDED" else 1
-    text = "afp deploy: OK\nlog: bucket afp: logs/x-deploy-hello.log\n"
+    text = "afp deploy: OK\nlog: bucket bucket-afp-main: logs/x-deploy-hello.log\n"
     print(json.dumps({"data": {"lifecycle-state": state, "content": {"exit-code": code, "text": text}}}))
 else:
     sys.exit("fake oci: unexpected " + line)
@@ -129,7 +129,7 @@ def test_deploy(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
 
     oci = calls(tmp_path, "oci")
     [create] = [c for c in oci if "repository" in c and "create" in c]
-    assert create[create.index("--display-name") + 1] == "afp/hello/web"
+    assert create[create.index("--display-name") + 1] == "repo-afp-hello/web"
     assert create[create.index("--compartment-id") + 1] == "ocid1.compartment.oc1..c"
 
     docker = calls(tmp_path, "docker")
@@ -137,7 +137,7 @@ def test_deploy(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
     assert build["args"][-1:] == ["web"]  # only the services with build:
     assert build["platform"] == "linux/arm64"  # the VM's CPU type
     assert build["no_attest"] == "1"  # a plain manifest; OCIR rejects the index
-    assert (build["tag"], build["prefix"]) == ("v1", f"{PREFIX_BASE}/hello")
+    assert (build["tag"], build["prefix"]) == ("v1", f"{PREFIX_BASE}/repo-afp-hello")
     [push] = [c for c in docker if "push" in c["args"]]
     assert push["args"][-1:] == ["web"]
     [login] = [c for c in docker if c["args"][:1] == ["login"]]
@@ -150,7 +150,7 @@ def test_deploy(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
 
 
 def test_deploy_keeps_an_existing_repository(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
-    env["FAKE_REPOS"] = "afp/hello/web"
+    env["FAKE_REPOS"] = "repo-afp-hello/web"
     assert run(["deploy", "hello", str(repo)], env).returncode == 0
     assert not any("create" in c and "repository" in c for c in calls(tmp_path, "oci"))
 

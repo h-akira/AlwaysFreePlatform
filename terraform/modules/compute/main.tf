@@ -105,7 +105,7 @@ locals {
 
 resource "oci_core_instance" "vm" {
   compartment_id      = var.compartment_id
-  display_name        = "afp-${var.name}"
+  display_name        = "vm-afp-${var.name}"
   availability_domain = data.oci_identity_availability_domains.all.availability_domains[var.availability_domain_index].name
   shape               = var.shape
 
@@ -119,7 +119,7 @@ resource "oci_core_instance" "vm" {
 
   create_vnic_details {
     subnet_id        = var.subnet_id
-    display_name     = "afp-${var.name}"
+    display_name     = "vnic-afp-${var.name}"
     hostname_label   = var.name
     assign_public_ip = false # the reserved IP below is attached instead
   }
@@ -168,7 +168,7 @@ data "oci_core_private_ips" "vm" {
 # Kept across VM replacements, so DNS records need no change.
 resource "oci_core_public_ip" "vm" {
   compartment_id = var.compartment_id
-  display_name   = "afp-${var.name}"
+  display_name   = "ip-afp-${var.name}"
   lifetime       = "RESERVED"
   private_ip_id  = data.oci_core_private_ips.vm.private_ips[0].id
 }

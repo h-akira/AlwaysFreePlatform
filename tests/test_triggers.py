@@ -66,7 +66,7 @@ OUTPUTS = {
     "devops_project_id": "ocid1.devopsproject.oc1..p",
     "devops_connection_id": "ocid1.devopsconnection.oc1..c",
     "pipelines": json.dumps({
-        "hello": {"build_pipeline_id": "ocid1.devopsbuildpipeline.oc1..hello", "webhook_secret_id": "ocid1.vaultsecret.oc1..wh", "webhook_secret_name": "afp-hello-webhook-abcd"},
+        "hello": {"build_pipeline_id": "ocid1.devopsbuildpipeline.oc1..hello", "webhook_secret_id": "ocid1.vaultsecret.oc1..wh", "webhook_secret_name": "secret-afp-hello-webhook-abcd"},
     }),
 }
 
@@ -112,15 +112,15 @@ def world(tmp_path: Path) -> World:
 def test_create_makes_the_trigger_and_stores_the_secret_without_printing_it(world: World) -> None:
     result = world.run("create")
     assert result.returncode == 0, result.stderr
-    assert world.triggers() == {"afp-hello": {"id": "ocid1.devopstrigger.oc1..new-afp-hello", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello"}}
+    assert world.triggers() == {"trigger-afp-hello": {"id": "ocid1.devopstrigger.oc1..new-trigger-afp-hello", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello"}}
     put = json.loads((world.dir / "secret-put.json").read_text())
     assert put == {"secretId": "ocid1.vaultsecret.oc1..wh", "secretContentContent": base64.b64encode(SECRET.encode()).decode()}
     assert (world.dir / "secret-mode").read_text() == "0o600"
     # The secret never reaches the output nor the command line of any process.
     assert SECRET not in result.stdout + result.stderr
     assert not any(SECRET in " ".join(c) for c in world.calls())
-    assert "Payload URL: https://devops.example.com/afp-hello" in result.stdout
-    assert "afp-hello-webhook-abcd" in result.stdout
+    assert "Payload URL: https://devops.example.com/trigger-afp-hello" in result.stdout
+    assert "secret-afp-hello-webhook-abcd" in result.stdout
     assert "--region us-ashburn-1 --secret-id ocid1.vaultsecret.oc1..wh --query 'data.\"secret-bundle-content\".content' --raw-output | base64 -d" in result.stdout
     create = next(c for c in world.calls() if "create-github-trigger" in c)
     acts = json.loads(create[create.index("--actions") + 1])
@@ -129,7 +129,7 @@ def test_create_makes_the_trigger_and_stores_the_secret_without_printing_it(worl
 
 
 def test_create_is_idempotent(world: World) -> None:
-    world.set_triggers({"afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello"}})
+    world.set_triggers({"trigger-afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello"}})
     result = world.run("create")
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
@@ -137,11 +137,11 @@ def test_create_is_idempotent(world: World) -> None:
 
 
 def test_create_updates_the_filter_in_place(world: World) -> None:
-    world.set_triggers({"afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello", "head_ref": "refs/tags/v*"}})
+    world.set_triggers({"trigger-afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello", "head_ref": "refs/tags/v*"}})
     result = world.run("create")
     assert result.returncode == 0, result.stderr
     # Same trigger (same URL and secret), new filter; no webhook to register again.
-    assert world.triggers() == {"afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello", "events": ["PUSH"], "head_ref": "release"}}
+    assert world.triggers() == {"trigger-afp-hello": {"id": "t1", "pipeline": "ocid1.devopsbuildpipeline.oc1..hello", "events": ["PUSH"], "head_ref": "release"}}
     assert "Updating the filter" in result.stdout
     assert "Payload URL" not in result.stdout
     assert not any("create-github-trigger" in c or "delete" in c for c in world.calls())
@@ -150,10 +150,10 @@ def test_create_updates_the_filter_in_place(world: World) -> None:
 
 
 def test_create_replaces_a_trigger_of_another_pipeline(world: World) -> None:
-    world.set_triggers({"afp-hello": {"id": "t-old", "pipeline": "ocid1.devopsbuildpipeline.oc1..old"}})
+    world.set_triggers({"trigger-afp-hello": {"id": "t-old", "pipeline": "ocid1.devopsbuildpipeline.oc1..old"}})
     result = world.run("create")
     assert result.returncode == 0, result.stderr
-    assert world.triggers()["afp-hello"]["pipeline"] == "ocid1.devopsbuildpipeline.oc1..hello"
+    assert world.triggers()["trigger-afp-hello"]["pipeline"] == "ocid1.devopsbuildpipeline.oc1..hello"
     assert "recreating" in result.stdout
 
 
@@ -171,10 +171,10 @@ def test_create_fails_without_the_devops_outputs(world: World) -> None:
 
 
 def test_prune_deletes_only_triggers_of_projects_without_a_repository(world: World) -> None:
-    world.set_triggers({"afp-hello": {"id": "t1", "pipeline": "p1"}, "afp-app-b": {"id": "t2", "pipeline": "p2"}})
+    world.set_triggers({"trigger-afp-hello": {"id": "t1", "pipeline": "p1"}, "trigger-afp-app-b": {"id": "t2", "pipeline": "p2"}})
     result = world.run("prune")
     assert result.returncode == 0, result.stderr
-    assert set(world.triggers()) == {"afp-hello"}
+    assert set(world.triggers()) == {"trigger-afp-hello"}
 
 
 def test_prune_does_nothing_before_the_devops_project_exists(world: World) -> None:
@@ -184,7 +184,7 @@ def test_prune_does_nothing_before_the_devops_project_exists(world: World) -> No
 
 
 def test_delete_all(world: World) -> None:
-    world.set_triggers({"afp-hello": {"id": "t1", "pipeline": "p1"}, "afp-app-b": {"id": "t2", "pipeline": "p2"}})
+    world.set_triggers({"trigger-afp-hello": {"id": "t1", "pipeline": "p1"}, "trigger-afp-app-b": {"id": "t2", "pipeline": "p2"}})
     result = world.run("delete-all")
     assert result.returncode == 0, result.stderr
     assert world.triggers() == {}

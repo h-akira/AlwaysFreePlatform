@@ -28,7 +28,7 @@ if "stack list" in line:
     print("ocid1.ormstack.oc1..stack")
 elif "get-stack-tf-state" in line:
     print(json.dumps({"outputs": {k: {"value": v} for k, v in {
-        "vm_id": "ocid1.instance.oc1..vm", "compartment_id": "ocid1.compartment.oc1..c", "bucket": "afp",
+        "vm_id": "ocid1.instance.oc1..vm", "compartment_id": "ocid1.compartment.oc1..c", "bucket": "bucket-afp-main",
     }.items()}}))
 elif "command create" in line:
     (d / "content.json").write_text(arg("--content"))
@@ -152,12 +152,12 @@ def test_platform_refuses_unknown_and_bad_tags(env: dict[str, str], tmp_path: Pa
 
 
 def test_destroy_empties_the_bucket_but_afp_json(env: dict[str, str], tmp_path: Path) -> None:
-    env["AFP_CONFIRM_DESTROY"] = "afp"
+    env["AFP_CONFIRM_DESTROY"] = "stack-afp-main"
     result = run("stack.sh", ["main", "destroy"], env)
     assert result.returncode == 0, result.stderr
     calls = [json.loads(line) for line in (tmp_path / "oci.log").read_text().splitlines()]
     [bulk] = [c for c in calls if "bulk-delete" in c]
-    assert bulk[bulk.index("--bucket-name") + 1] == "afp"
+    assert bulk[bulk.index("--bucket-name") + 1] == "bucket-afp-main"
     assert bulk[bulk.index("--exclude") + 1] == "afp.json"
     # Emptied before the destroy job is created.
     kinds = [i for i, c in enumerate(calls) if "bulk-delete" in c or "create-destroy-job" in c]
@@ -165,7 +165,7 @@ def test_destroy_empties_the_bucket_but_afp_json(env: dict[str, str], tmp_path: 
 
 
 def test_destroy_goes_on_without_the_bucket(env: dict[str, str], tmp_path: Path) -> None:
-    env["AFP_CONFIRM_DESTROY"] = "afp"
+    env["AFP_CONFIRM_DESTROY"] = "stack-afp-main"
     env["FAKE_BUCKET_MISSING"] = "1"
     result = run("stack.sh", ["main", "destroy"], env)
     assert result.returncode == 0, result.stderr

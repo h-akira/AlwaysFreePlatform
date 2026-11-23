@@ -20,8 +20,11 @@
 flowchart TB
   subgraph local["手元"]
     dev["開発: 本番と同じイメージ・同じ版の MySQL"]
-    push["プロジェクトの release に push<br/>（版のタグ付き）"]
+    deploy["make deploy<br/>（版のタグ付き）"]
+    push["プロジェクトの release に push<br/>（版のタグ付き。自動のデプロイを使うとき）"]
   end
+  deploy -->|"イメージ"| reg
+  deploy -->|"エージェントに afp deploy を実行させる"| afp
   push --> gh["GitHub"] --> devops["OCI DevOps<br/>リリース一式を置く"]
   devops -->|"エージェントに afp deploy を実行させる"| afp
   afp -->|"ビルドして push"| reg[("OCIR<br/>イメージ")]
@@ -60,14 +63,14 @@ flowchart TB
 | **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る） |
 | **Object Storage** | プロジェクトの一覧・各プロジェクトの今の版・リリース一式・DB のダンプ・`afp` の操作のログ |
 | **OCIR**（OCI のコンテナ・レジストリ。[references/oci-registry.md](references/oci-registry.md)） | ビルドしたイメージ。リポジトリはプロジェクトのサービスごと |
-| **OCI DevOps** | 各プロジェクトの `release` ブランチへの push を受けて、そのプロジェクトのリリース一式を Object Storage に置き、VM に `afp deploy` を実行させる（§5.6） |
+| **OCI DevOps** | リポジトリを伝えたプロジェクトの `release` ブランチへの push を受けて、そのプロジェクトのリリース一式を Object Storage に置き、VM に `afp deploy` を実行させる（§5.6） |
 | **OCI Monitoring・Notifications** | 基盤のヘルスチェック（§5.7）の結果を受け、失敗したり届かなくなったりしたらメールで知らせる |
 | **OCI Bastion** | 手元からプライベート・サブネットの DB に入るための、一時的な入口（§5.9） |
 | **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものをすべて作る。プロジェクトの一覧から、プロジェクトごとのシークレットとパイプラインも作る |
 
 - **VM の外は Terraform、VM の中は `afp`** が受け持つ。`afp` は Terraform が書いたプロジェクトの一覧に従う。
 - プロジェクトの DB とユーザは、Terraform でなく VM の `afp` が、Vault に置いた DB の管理者のパスワードで作る。
-- **基盤のヘルスチェック** は、VM から HeatWave に問い合わせて基盤が動いているかを確かめること（§5.7）。コンテナが健康かを確かめる compose の `healthcheck` とは別のもの。
+- **基盤のヘルスチェック** は、VM から HeatWave に問い合わせて基盤が動いているかを確かめること（§5.7）。コンテナが正しく動いているかを確かめる compose の `healthcheck` とは別のもの。
 - デプロイに要るファイル一式（リリース一式。プロジェクトのその版の `compose.afp.yaml`）は、バケットに版ごとに置く。VM は使うたびにバケットから取る。
 - OCIR のリポジトリは Terraform で作らない。デプロイが、ビルドするサービスのリポジトリが無ければ基盤のコンパートメントに作る。本体の destroy では消えない。
 - OCIR へのログインは、手元も VM も、使うたびに OCI の資格から短い期限のトークンを取って行う。auth token は使わない。
@@ -79,6 +82,7 @@ flowchart TB
 - **基盤の開発中は、削除を防ぐ仕組みを一切付けない**（Terraform の `prevent_destroy`・HeatWave の削除防止・コンパートメントを消せなくする設定）。
 - Terraform の state は Resource Manager が預かる。手元に state を置かない。
 - 環境ごとの値（プロジェクトの一覧・ドメイン・OCID など）は、この公開リポジトリに置かず、別の非公開の設定に置く。
+- 基盤が作る OCI の資源の名前は `<種類>-afp-<識別子>` にする（例: `bucket-afp-main`・`subnet-afp-db`・`trigger-afp-<プロジェクト>`）。識別子は必ず付け、1 つしか無いものは `main`。OCIR のリポジトリは `repo-afp-<プロジェクト>/<サービス>`。名前に英数字しか使えない Bastion は、ハイフンを除く（`bastionafpmain`）。
 
 ## 4. 状態の置き場所
 
@@ -148,10 +152,10 @@ sequenceDiagram
 
 ### 5.6 デプロイ
 
-- **各プロジェクトのリポジトリ** の `release` ブランチに push すると、そのプロジェクトだけをビルドし、VM でデプロイするところまで自動で行う。デプロイした版の名前は、`release` の先頭のコミットに付いた `v` で始まるタグ（例: `v1.2.3`）の名前そのもの。そのようなタグが無い、または複数あるときは、デプロイしない。
-- パイプラインは、プロジェクトの一覧でリポジトリを伝えたプロジェクトにだけ作る。伝えないプロジェクトは、管理者が手元からデプロイする（下の「DevOps が使えないとき」と同じ道）。
+- デプロイは、管理者が手元から行う（`make deploy`）か、自動で行う。自動のデプロイでは、**プロジェクトのリポジトリ** の `release` ブランチに push すると、そのプロジェクトだけをビルドし、VM でデプロイするところまで自動で行う。デプロイした版の名前は、`release` の先頭のコミットに付いた `v` で始まるタグ（例: `v1.2.3`）の名前そのもの。そのようなタグが無い、または複数あるときは、デプロイしない。
+- パイプラインは、プロジェクトの一覧でリポジトリを伝えたプロジェクトにだけ作る。伝えないプロジェクトは、管理者が手元からデプロイする（下の「DevOps が使えないとき」と同じ道）。伝えるかは、あとから変えられる。
 - **基盤のコードも、タグで版を決めて VM に届ける**。どのタグを使うかを Object Storage に置き、VM はそのタグのコードを公開リポジトリから取って入れ替える。入れ替えるのは、VM の起動のたびと、管理者が Run Command で呼んだときに流れる起動のスクリプト（`afp` の外の固定のスクリプト）で、`afp` 自身は入れ替えない。
-- VM でデプロイを実行するのは、DevOps の **インスタンス・グループへのデプロイ**（AWS の CodeDeploy に当たる）。VM の中の **Oracle Cloud Agent**（OCI のイメージに入っているエージェント）の **Run Command** のプラグインが、`afp deploy <プロジェクト> <版>` を実行する（[references/oci-devops.md](references/oci-devops.md)・[references/oci-run-command.md](references/oci-run-command.md)）。
+- VM でデプロイを実行するのは、DevOps の **インスタンス・グループへのデプロイ**。VM の中の **Oracle Cloud Agent**（OCI のイメージに入っているエージェント）の **Run Command** のプラグインが、`afp deploy <プロジェクト> <版>` を実行する（[references/oci-devops.md](references/oci-devops.md)・[references/oci-run-command.md](references/oci-run-command.md)）。
 - DevOps が使えないときは、手元から同じ Run Command を直接呼んで `afp deploy` を実行させる。
 - デプロイには ssh を使わない。
 
@@ -169,7 +173,7 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 - **パイプラインはプロジェクトごとに独立させる**。あるプロジェクトの push は、そのプロジェクトのパイプラインだけを動かす。
 - ビルドは、プロジェクトの間で並んで走ってもよい。
 - VM の上のデプロイは、1 つずつ行う（`afp` がロックを取る）。後のものは前のものが終わるのを待つ。
-- プロジェクトは、基盤の雛形に沿った DevOps のビルドの手順（`build_spec.yaml`）を、自分のリポジトリに置く。雛形の決まった部分が、その版のソースと `compose.afp.yaml` を Object Storage に置き、VM の `afp deploy` がそれをビルドしてデプロイする。プロジェクトは、決まった部分の前に自分の手順を足せる。
+- リポジトリを伝えたプロジェクトは、基盤の雛形に沿った DevOps のビルドの手順（`build_spec.yaml`）を、自分のリポジトリに置く。雛形の決まった部分が、その版のソースと `compose.afp.yaml` を Object Storage に置き、VM の `afp deploy` がそれをビルドしてデプロイする。プロジェクトは、決まった部分の前に自分の手順を足せる。
 
 ### 5.7 基盤の監視
 

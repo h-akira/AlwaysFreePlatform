@@ -70,7 +70,7 @@ def compose_env(cfg: Config, p: Project, tag: str, secrets: dict[str, str]) -> d
     env = {name: value for name, value in secrets.items() if name != "AFP_DB_PASSWORD"}
     env.update(
         {
-            "AFP_IMAGE_PREFIX": f"{cfg.image_prefix_base}/{p.name}",
+            "AFP_IMAGE_PREFIX": f"{cfg.image_prefix_base}/repo-afp-{p.name}",
             "AFP_TAG": tag,
             "AFP_PROJECT": p.name,
             "AFP_DOMAIN": p.domain,

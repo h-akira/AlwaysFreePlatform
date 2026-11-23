@@ -32,7 +32,7 @@ data "oci_identity_availability_domains" "all" {
 # The backup policy cannot be set for Always Free (fixed: automatic, 1 day).
 resource "oci_mysql_mysql_db_system" "afp" {
   compartment_id          = var.compartment_id
-  display_name            = "afp-db"
+  display_name            = "mysql-afp-main"
   availability_domain     = data.oci_identity_availability_domains.all.availability_domains[var.availability_domain_index].name
   shape_name              = "MySQL.Free"
   subnet_id               = var.subnet_id

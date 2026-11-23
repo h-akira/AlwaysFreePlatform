@@ -18,7 +18,7 @@ variable "bucket_name" {
 # Every instance in the compartment acts as the platform's VM.
 resource "oci_identity_dynamic_group" "vm" {
   compartment_id = var.tenancy_ocid
-  name           = "afp-vm"
+  name           = "dg-afp-vm"
   description    = "AlwaysFreePlatform VMs"
   matching_rule  = "ALL {instance.compartment.id = '${var.compartment_id}'}"
 }
@@ -30,7 +30,7 @@ locals {
 
 resource "oci_identity_policy" "vm" {
   compartment_id = var.compartment_id
-  name           = "afp-vm"
+  name           = "policy-afp-vm"
   description    = "What the AlwaysFreePlatform VMs may do"
   statements = [
     "Allow dynamic-group ${local.dg} to read secret-bundles in compartment ${local.c}",
