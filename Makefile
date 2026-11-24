@@ -12,10 +12,10 @@ PYTHON ?= $(ROOT)/env/bin/python
 help: ## Show targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
 
-plan: ## Main stack: upload terraform/ at HEAD and run a Resource Manager plan job
+plan: ## Main stack: upload terraform/ as it is and run a Resource Manager plan job
 	@$(ROOT)/scripts/stack.sh main plan
 
-apply: ## Main stack: apply the latest plan job (must be a plan of HEAD)
+apply: ## Main stack: apply the latest plan job (must be a plan of terraform/ as it is now)
 	@$(ROOT)/scripts/stack.sh main apply
 
 destroy: ## Main stack: destroy all its resources (asks for confirmation)
@@ -33,11 +33,9 @@ base-apply: ## Base stack: apply the latest plan job
 base-outputs: ## Base stack: print the outputs
 	@$(ROOT)/scripts/stack.sh base outputs
 
-# TAG and ID, like CMD, go through the environment unexpanded.
-platform: export AFP_TAG = $(value TAG)
-platform: ## Point the VM at TAG of the platform code (pushed to GitHub) and wait for it to apply
-	@[ -n "$$AFP_TAG" ] || { echo "usage: make platform TAG=<tag>" >&2; exit 2; }
-	@$(ROOT)/scripts/platform.sh "$$AFP_TAG"
+# ID, like CMD, goes through the environment unexpanded.
+platform: ## Bring the VM up to the platform code here, as it is (no git), and wait for it
+	@$(ROOT)/scripts/platform.sh
 
 command-result: export AFP_COMMAND_ID = $(value ID)
 command-result: ## Wait for a Run Command sent by make (ID=<command OCID>) and show its output

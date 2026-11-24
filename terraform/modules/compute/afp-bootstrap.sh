@@ -11,7 +11,7 @@
 #   3. Docker, the compose plugin and the OCI CLI
 #   4. block containers from the metadata service (except the VCN's DNS)
 #   5. let ocarun (Run Command) sudo only this script and afp
-#   6. fetch the platform code named in platform.json, then afp install / sync
+#   6. take the platform code from platform.tar.gz in the bucket, then afp install / sync
 set -euo pipefail
 
 BUCKET="bucket-afp-main" # must match the bucket name in terraform/main
@@ -40,8 +40,6 @@ put_file() {
   rm -f "$tmp"
   echo changed
 }
-
-json_get() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$1" "$2"; }
 
 # 0. Oracle Linux 9 reserves 448 MB for kdump (crashkernel=1G-64G:448M)
 # whenever the VM sees at least 1 GB, which an E2.1.Micro sometimes does.
@@ -81,8 +79,9 @@ grep -q "^$SWAP_FILE " /etc/fstab || echo "$SWAP_FILE none swap defaults 0 0" >>
 systemctl disable --now dnf-makecache.timer > /dev/null 2>&1 || true
 
 # 2. Outbound access starts only after the reserved public IP is attached.
+region="$(curl -sSf -m 10 -H 'Authorization: Bearer Oracle' "$METADATA/instance/canonicalRegionName")"
 for i in $(seq 90); do
-  curl -sS -m 10 -o /dev/null https://github.com && break
+  curl -sS -m 10 -o /dev/null "https://objectstorage.$region.oraclecloud.com" && break
   (( i < 90 )) || die "no internet access yet"
   log "waiting for internet access ..."
   sleep 10
@@ -162,39 +161,35 @@ visudo -cqf "$sudoers" || die "invalid sudoers entry"
 put_file /etc/sudoers.d/afp 0440 < "$sudoers" > /dev/null
 rm -f "$sudoers"
 
-# 6. Platform code. afp.json is written by Terraform, platform.json by
-# make platform; wait (fail and retry) until both exist.
-region="$(curl -sSf -m 10 -H 'Authorization: Bearer Oracle' "$METADATA/instance/canonicalRegionName")"
+# 6. Platform code. afp.json is written by Terraform, platform.tar.gz by
+# make platform (the code on the administrator's machine as it is, ADR 038);
+# wait (fail and retry) until both exist.
 oci_() { oci --auth instance_principal --region "$region" "$@"; }
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 oci_ os object get -bn "$BUCKET" --name afp.json --file "$work/afp.json" > /dev/null \
   || die "cannot read afp.json from bucket $BUCKET"
-oci_ os object get -bn "$BUCKET" --name platform.json --file "$work/platform.json" > /dev/null 2>&1 \
-  || die "platform.json not found; run 'make platform TAG=<tag>'"
+oci_ os object get -bn "$BUCKET" --name platform.tar.gz --file "$work/platform.tar.gz" > /dev/null 2>&1 \
+  || die "platform.tar.gz not found; run 'make platform'"
 
-commit="$(json_get "$work/platform.json" commit)"
-repo="$(json_get "$work/afp.json" platform_repository)"
-[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "invalid commit in platform.json: $commit"
-
+# Each version is kept under the hash of the archive (not of the files inside).
+id="$(sha256sum "$work/platform.tar.gz" | cut -c1-12)"
 mkdir -p "$AFP_DIR/releases"
-release="$AFP_DIR/releases/$commit"
+release="$AFP_DIR/releases/$id"
 if [[ ! -d "$release" ]]; then
-  log "fetching $repo at $commit"
-  # Tags can move, so the code is fetched by commit.
-  curl -fsSL -m 300 -o "$work/src.tar.gz" "$repo/archive/$commit.tar.gz"
+  log "unpacking platform.tar.gz ($id)"
   rm -rf "$release.tmp"
   mkdir "$release.tmp"
-  tar -xzf "$work/src.tar.gz" --strip-components=1 -C "$release.tmp"
+  tar -xzf "$work/platform.tar.gz" -C "$release.tmp"
   mv "$release.tmp" "$release"
 fi
-if [[ "$(readlink "$AFP_DIR/current" || true)" != "releases/$commit" ]]; then
-  ln -sfn "releases/$commit" "$AFP_DIR/current.new"
+if [[ "$(readlink "$AFP_DIR/current" || true)" != "releases/$id" ]]; then
+  ln -sfn "releases/$id" "$AFP_DIR/current.new"
   mv -T "$AFP_DIR/current.new" "$AFP_DIR/current"
-  log "platform code is now $commit"
+  log "platform code is now $id"
 fi
 
-[[ -x "$AFP_DIR/current/bin/afp" ]] || die "$commit has no bin/afp"
+[[ -x "$AFP_DIR/current/bin/afp" ]] || die "platform.tar.gz ($id) has no bin/afp"
 "$AFP_DIR/current/bin/afp" install
 "$AFP_DIR/current/bin/afp" sync
 log "done"

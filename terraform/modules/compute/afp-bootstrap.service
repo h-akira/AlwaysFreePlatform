@@ -2,7 +2,7 @@
 Description=Bring the VM up to the AlwaysFreePlatform code (afp-bootstrap)
 Wants=network-online.target
 After=network-online.target
-# Retry forever: it waits for the reserved IP and for platform.json.
+# Retry forever: it waits for the reserved IP and for platform.tar.gz.
 StartLimitIntervalSec=0
 
 [Service]

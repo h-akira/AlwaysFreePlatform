@@ -5,8 +5,10 @@
 #   base     Stack "stack-afp-base" (terraform/base): what destroy cannot remove.
 #   main     Stack "stack-afp-main" (terraform/main): everything else.
 #
-#   plan     Upload terraform/ at HEAD and the variables, then run a plan job.
-#   apply    Apply exactly the latest plan job, if it was made from HEAD.
+#   plan     Upload terraform/ as it is on disk (committed or not) and the
+#            variables, then run a plan job named after the hash of the code.
+#   apply    Apply exactly the latest plan job, if it was made from the code
+#            as it is now (same hash).
 #            For the main stack, also brings the GitHub triggers of OCI DevOps
 #            in line with the projects (scripts/triggers.py: those of projects
 #            without a repository are deleted first, missing ones are created
@@ -66,14 +68,18 @@ TENANCY="$("${PY[@]}" get "$TFVARS" tenancy_ocid)"
 REGION="$("${PY[@]}" get "$TFVARS" region)"
 oci_() { oci --region "$REGION" "$@"; }
 
-require_clean_tree() {
-  # The applied code must match a commit so the submodule pointer records it.
-  if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
-    die "working tree has uncommitted changes; commit them first"
-  fi
-}
+# Zip terraform/ as it is on disk into $1 and print the hash of its contents
+# (no git: ADR 038). The whole of terraform/ is sent so that the root module
+# can reach ../modules.
+pack() { "${PY[@]}" pack-terraform "$ROOT/terraform" "$1"; }
 
-head_sha() { git -C "$ROOT" rev-parse --short=12 HEAD; }
+code_hash() {
+  local dir hash
+  dir="$(mktemp -d)"
+  hash="$(pack "$dir/stack.zip")" || { rm -rf "$dir"; die "cannot pack terraform/"; }
+  rm -rf "$dir"
+  printf '%s\n' "$hash"
+}
 
 # Print the stack's OCID, or nothing if it does not exist. Fails on CLI errors
 # (e.g. an expired session) instead of treating them as "not found".
@@ -128,15 +134,10 @@ run_job() {
 }
 
 cmd_plan() {
-  require_clean_tree
   local sha stack_id
-  sha="$(head_sha)"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-
-  # Archive the committed tree, not the working files. The whole of terraform/
-  # is sent so that the root module can reach ../modules.
-  git -C "$ROOT" archive --format=zip -o "$tmp/stack.zip" HEAD:terraform
+  sha="$(pack "$tmp/stack.zip")" || die "cannot pack terraform/"
   "${PY[@]}" variables "$TFVARS" ${VARIABLE_KEYS:+"$VARIABLE_KEYS"} > "$tmp/variables.json"
 
   stack_id="$(find_stack)"
@@ -163,13 +164,12 @@ cmd_plan() {
 }
 
 cmd_apply() {
-  require_clean_tree
   local sha stack_id plan
-  sha="$(head_sha)"
+  sha="$(code_hash)"
   stack_id="$(find_stack)"
   [[ -n "$stack_id" && "$stack_id" != "null" ]] || die "stack not found; run 'make ${MAKE_PREFIX}plan' first"
 
-  # Latest job of the stack must be a successful plan of HEAD.
+  # Latest job of the stack must be a successful plan of the code as it is now.
   plan="$(oci_ resource-manager job list --stack-id "$stack_id" \
     --sort-by TIMECREATED --sort-order DESC --limit 1 \
     --query 'data[0].[id, operation, "lifecycle-state", "display-name"] | join(`" "`, @)' \
@@ -178,7 +178,7 @@ cmd_apply() {
   [[ "$operation" == "PLAN" && "$state" == "SUCCEEDED" ]] \
     || die "latest job is not a successful plan ($operation $state); run 'make ${MAKE_PREFIX}plan'"
   [[ "$name" == "plan-$sha" ]] \
-    || die "latest plan ($name) is not of HEAD ($sha); run 'make ${MAKE_PREFIX}plan'"
+    || die "latest plan ($name) is not of terraform/ as it is now ($sha); run 'make ${MAKE_PREFIX}plan'"
 
   if [[ "$WORKDIR" == "main" ]]; then
     # A trigger left on a build pipeline that is going away may block its deletion.
@@ -187,7 +187,7 @@ cmd_apply() {
   echo "Applying $name ..."
   run_job create-apply-job --stack-id "$stack_id" --display-name "apply-$sha" \
     --execution-plan-strategy FROM_PLAN_JOB_ID --execution-plan-job-id "$plan_id"
-  echo "Applied $sha. Commit the platform/ pointer in the config repository."
+  echo "Applied $sha."
   if [[ "$WORKDIR" == "main" ]]; then
     stack_outputs "$stack_id" | "${TRIGGERS[@]}" create \
       || die "the stack is applied but the triggers are not; run 'make plan' and 'make apply' again"
@@ -230,7 +230,7 @@ cmd_destroy() {
   stack_outputs "$stack_id" | "${TRIGGERS[@]}" delete-all || die "cannot delete the triggers"
   empty_bucket "$stack_id"
   echo "Destroying ..."
-  run_job create-destroy-job --stack-id "$stack_id" --display-name "destroy-$(head_sha)" \
+  run_job create-destroy-job --stack-id "$stack_id" --display-name "destroy-$(date -u +%Y%m%dT%H%M%SZ)" \
     --execution-plan-strategy AUTO_APPROVED
   echo "Destroyed. The stack itself is kept; 'make plan' and 'make apply' recreate everything."
 }

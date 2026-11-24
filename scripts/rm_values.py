@@ -20,12 +20,24 @@ Subcommands:
                              with build:, whose image must be PREFIX/<name>:<tag>.
   json-get KEY               Print one top-level value of the JSON on stdin.
   has-project NAME           Read afp.json on stdin; fail unless NAME is listed.
+  pack-terraform DIR OUT     Zip DIR (terraform/) as it is on disk into OUT and
+                             print the hash of its contents (12 hex digits).
+  pack-platform ROOT OUT     Pack the platform code that the VM and the DevOps
+                             build use (PLATFORM_DIRS of ROOT) into OUT, a
+                             tar.gz; print its hash (12 hex digits).
 """
 
 from __future__ import annotations
 
+import gzip
+import hashlib
+import io
 import json
+import os
 import sys
+import tarfile
+import zipfile
+from pathlib import Path
 from typing import Any
 
 
@@ -127,6 +139,71 @@ def build_services(config: dict[str, Any], prefix: str) -> list[tuple[str, str]]
     return result
 
 
+# Code is sent as it is on disk, committed or not (ADR 038). Local state and
+# caches are left out.
+SKIP_DIRS = {".terraform", "__pycache__", ".pytest_cache", ".git"}
+SKIP_SUFFIXES = (".pyc", ".tfstate", ".tfstate.backup")
+# What the VM (afp-bootstrap) and the DevOps build (devops-release.sh) use.
+PLATFORM_DIRS = ("afp", "bin", "caddy", "mysql", "scripts")
+
+
+def _files(top: Path) -> list[Path]:
+    """Files under top, sorted by their relative path, without SKIP_*."""
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(top):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for name in filenames:
+            if not name.endswith(SKIP_SUFFIXES):
+                found.append(Path(dirpath) / name)
+    return sorted(found, key=lambda p: p.relative_to(top).as_posix())
+
+
+def _content_hash(entries: list[tuple[str, bytes, int]]) -> str:
+    """Hash of (relative path, executable bit, bytes) of every file."""
+    h = hashlib.sha256()
+    for name, data, mode in entries:
+        h.update(f"{name}\0{1 if mode & 0o111 else 0}\0{len(data)}\0".encode())
+        h.update(data)
+    return h.hexdigest()[:12]
+
+
+def _entries(files: list[Path], base: Path) -> list[tuple[str, bytes, int]]:
+    return [(p.relative_to(base).as_posix(), p.read_bytes(), p.stat().st_mode) for p in files]
+
+
+def pack_terraform(top: Path, out: Path) -> str:
+    """Zip terraform/ as it is (the root modules reach ../modules)."""
+    entries = _entries(_files(top), top)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data, mode in entries:
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.external_attr = (mode & 0o777) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(info, data)
+    return _content_hash(entries)
+
+
+def pack_platform(root: Path, out: Path) -> str:
+    """tar.gz of PLATFORM_DIRS, the same bytes for the same files."""
+    files: list[Path] = []
+    for d in PLATFORM_DIRS:
+        if not (root / d).is_dir():
+            raise ValueError(f"{root / d} is not a directory")
+        files += _files(root / d)
+    entries = _entries(files, root)
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb", mtime=0) as gz:
+        with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as tar:
+            for name, data, mode in entries:
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                info.mode = 0o755 if mode & 0o111 else 0o644
+                info.mtime = 0
+                tar.addfile(info, io.BytesIO(data))
+    out.write_bytes(buf.getvalue())
+    return _content_hash(entries)
+
+
 def _load_json(path: str) -> dict[str, Any]:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
@@ -167,6 +244,10 @@ def main(argv: list[str]) -> int:
         if argv[1] not in names:
             print(f"project {argv[1]} is not in afp.json (listed: {', '.join(names) or 'none'})", file=sys.stderr)
             return 1
+    elif len(argv) == 3 and argv[0] == "pack-terraform":
+        print(pack_terraform(Path(argv[1]), Path(argv[2])))
+    elif len(argv) == 3 and argv[0] == "pack-platform":
+        print(pack_platform(Path(argv[1]), Path(argv[2])))
     elif len(argv) == 1 and argv[0] == "outputs":
         for key, value in state_outputs(json.load(sys.stdin)).items():
             print(f"{key}={value}")

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -41,7 +43,9 @@ elif "command-execution get" in line:
     content = {"text": text} if code is None else {"exit-code": code, "text": text}
     print(json.dumps({"data": {"lifecycle-state": state, "content": content}}))
 elif "os object put" in line:
-    (d / "put.json").write_text(sys.stdin.read())
+    src = arg("--file")
+    (d / "put-name").write_text(arg("--name"))
+    (d / "put.bin").write_bytes(sys.stdin.buffer.read() if src == "-" else Path(src).read_bytes())
 elif "os bucket get" in line:
     sys.exit(int(os.environ.get("FAKE_BUCKET_MISSING", "0")))
 elif "bulk-delete" in line:
@@ -62,14 +66,8 @@ else:
 def env(tmp_path: Path) -> dict[str, str]:
     config = tmp_path / "config"
     config.mkdir()
-    repo = tmp_path / "repo"
-    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com"]
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "a"], check=True)
-    subprocess.run([*git, "tag", "-a", "test-annotated", "-m", "test"], check=True)
-    subprocess.run([*git, "tag", "test-light"], check=True)
     (config / "terraform.tfvars.json").write_text(json.dumps({
-        "tenancy_ocid": "ocid1.tenancy.oc1..xxxx", "region": "us-ashburn-1", "platform_repository": str(repo),
+        "tenancy_ocid": "ocid1.tenancy.oc1..xxxx", "region": "us-ashburn-1",
     }))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -87,11 +85,6 @@ def env(tmp_path: Path) -> dict[str, str]:
 def run(script: str, args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["bash", str(SCRIPTS / script), *args], env=env, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL)
-
-
-def commit_of(env: dict[str, str], ref: str) -> str:
-    repo = json.loads(Path(env["AFP_CONFIG_DIR"], "terraform.tfvars.json").read_text())["platform_repository"]
-    return subprocess.run(["git", "-C", repo, "rev-parse", ref], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def test_send_without_wait_prints_how_to_check(env: dict[str, str], tmp_path: Path) -> None:
@@ -127,28 +120,26 @@ def test_timed_out_command_fails(env: dict[str, str], tmp_path: Path) -> None:
     assert result.returncode == 1
 
 
-def test_platform_writes_the_peeled_commit(env: dict[str, str], tmp_path: Path) -> None:
-    result = run("platform.sh", ["test-annotated"], env)
+def test_platform_puts_the_code_as_it_is_and_runs_the_bootstrap(env: dict[str, str], tmp_path: Path) -> None:
+    result = run("platform.sh", [], env)
     assert result.returncode == 0, result.stderr
-    put = json.loads((tmp_path / "put.json").read_text())
-    # The annotated tag's commit, not the tag object.
-    assert put == {"tag": "test-annotated", "commit": commit_of(env, "test-annotated^{commit}")}
+    assert (tmp_path / "put-name").read_text() == "platform.tar.gz"
+    with tarfile.open(tmp_path / "put.bin") as tar:
+        names = tar.getnames()
+        assert tar.getmember("bin/afp").mode & 0o111  # still executable on the VM
+    assert "afp/cli.py" in names and "scripts/devops-release.sh" in names
+    assert not any(n.startswith(("tests/", "terraform/", "docs/")) or "__pycache__" in n for n in names)
+    assert re.search(r"platform\.tar\.gz: [0-9a-f]{12}", result.stdout)
     content = json.loads((tmp_path / "content.json").read_text())
     assert "{ sudo -n /usr/local/sbin/afp-bootstrap\n}" in content["source"]["text"]
     assert "SUCCEEDED" in result.stdout
 
 
-def test_platform_takes_a_lightweight_tag(env: dict[str, str], tmp_path: Path) -> None:
-    assert run("platform.sh", ["test-light"], env).returncode == 0
-    assert json.loads((tmp_path / "put.json").read_text())["commit"] == commit_of(env, "test-light")
-
-
-def test_platform_refuses_unknown_and_bad_tags(env: dict[str, str], tmp_path: Path) -> None:
-    result = run("platform.sh", ["v9.9.9"], env)
-    assert result.returncode == 1 and "push it first" in result.stderr
-    result = run("platform.sh", ["x;echo"], env)
-    assert result.returncode == 1 and "invalid tag" in result.stderr
-    assert not (tmp_path / "put.json").exists()
+def test_platform_takes_no_tag(env: dict[str, str], tmp_path: Path) -> None:
+    # The platform code has no versions by tag any more (ADR 038).
+    result = run("platform.sh", ["v1.0.0"], env)
+    assert result.returncode == 2 and "Usage: platform.sh" in result.stderr
+    assert not (tmp_path / "put-name").exists()
 
 
 def test_destroy_empties_the_bucket_but_afp_json(env: dict[str, str], tmp_path: Path) -> None:

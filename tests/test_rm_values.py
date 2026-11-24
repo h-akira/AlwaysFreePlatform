@@ -2,6 +2,8 @@ import json
 import os
 import subprocess
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -184,3 +186,50 @@ def test_build_services_refuses_other_images(image: str) -> None:
 def test_build_services_needs_one() -> None:
     with pytest.raises(ValueError, match="nothing to build"):
         rm_values.build_services({"services": {"redis": {"image": "redis:7"}}}, PREFIX)
+
+
+def _tree(top: Path, files: dict[str, str]) -> Path:
+    for name, text in files.items():
+        path = top / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return top
+
+
+def test_pack_terraform_takes_the_files_as_they_are(tmp_path: Path) -> None:
+    # Not a git repository: what is on disk is sent (ADR 038).
+    top = _tree(tmp_path / "terraform", {
+        "main/main.tf": "a", "modules/x/main.tf": "b",
+        "main/.terraform/providers/p": "cache", "main/terraform.tfstate": "state",
+    })
+    first = rm_values.pack_terraform(top, tmp_path / "a.zip")
+    with zipfile.ZipFile(tmp_path / "a.zip") as z:
+        assert sorted(z.namelist()) == ["main/main.tf", "modules/x/main.tf"]
+    # The same files give the same hash; a change gives another.
+    assert rm_values.pack_terraform(top, tmp_path / "b.zip") == first
+    assert (tmp_path / "a.zip").read_bytes() == (tmp_path / "b.zip").read_bytes()
+    (top / "main" / "main.tf").write_text("changed")
+    assert rm_values.pack_terraform(top, tmp_path / "c.zip") != first
+
+
+def test_pack_platform_takes_what_the_vm_uses(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "platform", {name: "x" for name in [
+        "afp/cli.py", "afp/__pycache__/cli.cpython-39.pyc", "bin/afp", "caddy/compose.yaml",
+        "mysql/VERSION", "scripts/devops-release.sh", "tests/test_x.py", "terraform/main/main.tf",
+    ]})
+    (root / "bin" / "afp").chmod(0o755)
+    first = rm_values.pack_platform(root, tmp_path / "a.tar.gz")
+    with tarfile.open(tmp_path / "a.tar.gz") as tar:
+        assert sorted(tar.getnames()) == ["afp/cli.py", "bin/afp", "caddy/compose.yaml",
+                                          "mysql/VERSION", "scripts/devops-release.sh"]
+        assert tar.getmember("bin/afp").mode == 0o755 and tar.getmember("afp/cli.py").mode == 0o644
+    assert rm_values.pack_platform(root, tmp_path / "b.tar.gz") == first
+    assert (tmp_path / "a.tar.gz").read_bytes() == (tmp_path / "b.tar.gz").read_bytes()
+    (root / "bin" / "afp").chmod(0o644)  # the executable bit counts
+    assert rm_values.pack_platform(root, tmp_path / "c.tar.gz") != first
+
+
+def test_pack_platform_needs_every_directory(tmp_path: Path) -> None:
+    root = _tree(tmp_path / "platform", {"afp/cli.py": "x"})
+    with pytest.raises(ValueError, match="bin"):
+        rm_values.pack_platform(root, tmp_path / "a.tar.gz")

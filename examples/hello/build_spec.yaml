@@ -23,11 +23,8 @@ steps:
     name: release with the platform
     command: |
       set -euo pipefail
-      # The platform's code at the version the VM runs (platform.json).
-      oci os object get -bn "$AFP_BUCKET" --name afp.json --file /tmp/afp.json
-      oci os object get -bn "$AFP_BUCKET" --name platform.json --file /tmp/platform.json
-      repo="$(python3 -c 'import json; print(json.load(open("/tmp/afp.json"))["platform_repository"])')"
-      commit="$(python3 -c 'import json; print(json.load(open("/tmp/platform.json"))["commit"])')"
+      # The platform's code that the VM runs (put by make platform).
+      oci os object get -bn "$AFP_BUCKET" --name platform.tar.gz --file /tmp/platform.tar.gz
       mkdir -p /tmp/afp-platform
-      curl -fsSL "$repo/archive/$commit.tar.gz" | tar -xz -C /tmp/afp-platform --strip-components=1
+      tar -xzf /tmp/platform.tar.gz -C /tmp/afp-platform
       AFP_TAG="$(/tmp/afp-platform/scripts/devops-release.sh)"

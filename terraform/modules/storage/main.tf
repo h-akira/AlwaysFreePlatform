@@ -15,7 +15,7 @@ variable "afp_config" {
   type = any
 }
 
-# Holds afp.json (written here), platform.json (make platform), releases,
+# Holds afp.json (written here), platform.tar.gz (make platform), releases,
 # each project's current version and DB dumps. The main stack's destroy
 # needs it empty, except for objects Terraform itself manages.
 resource "oci_objectstorage_bucket" "afp" {

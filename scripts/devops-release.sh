@@ -9,7 +9,7 @@
 # Usage: devops-release.sh
 #   Prints the tag (for AFP_TAG, which the deployment receives); the progress
 #   goes to stderr. Fails unless exactly one tag v* points at the commit under
-#   build (the head of the branch release, ADR 029).
+#   build (the head of the branch release, ADR 038).
 #
 # Environment (set by OCI DevOps and by the build pipeline's parameters):
 #   AFP_PROJECT, AFP_BUCKET        Project name and the platform's bucket.
