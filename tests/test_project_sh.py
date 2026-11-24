@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -99,18 +100,11 @@ def env(tmp_path: Path) -> dict[str, str]:
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
+    # A plain directory: deploying from this machine does not need git.
     path = tmp_path / "hello"
     path.mkdir()
     (path / "compose.afp.yaml").write_text("services: {}\n")
-    git(path, "init", "-q")
-    git(path, "add", "compose.afp.yaml")
-    git(path, "commit", "-q", "-m", "a")
-    git(path, "tag", "v1")
     return path
-
-
-def git(path: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@example.com", *args], check=True)
 
 
 def run(args: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -123,7 +117,7 @@ def calls(tmp_path: Path, name: str) -> list:
 
 
 def test_deploy(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
-    result = run(["deploy", "hello", str(repo)], env)
+    result = run(["deploy", "hello", str(repo), "v1"], env)
     assert result.returncode == 0, result.stderr
     assert "afp deploy: OK" in result.stdout
 
@@ -163,19 +157,22 @@ def test_deploy_failure_shows_the_end_of_the_log(env: dict[str, str], repo: Path
     assert "full log line 2" in result.stdout
 
 
-def test_deploy_refuses_a_dirty_tree(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
-    (repo / "new.txt").write_text("x")
+def test_deploy_names_the_version_after_the_utc_time_by_default(env: dict[str, str], repo: Path, tmp_path: Path) -> None:
     result = run(["deploy", "hello", str(repo)], env)
-    assert result.returncode == 1 and "uncommitted changes" in result.stderr
-    assert not calls(tmp_path, "docker")
+    assert result.returncode == 0, result.stderr
+    name = (tmp_path / "put-name").read_text()
+    assert re.fullmatch(r"releases/hello/\d{8}T\d{6}Z/compose\.afp\.yaml", name), name
+    tag = name.split("/")[2]
+    [build] = [c for c in calls(tmp_path, "docker") if "build" in c["args"]]
+    assert build["tag"] == tag
+    assert f"afp deploy hello {tag}\n}}" in json.loads((tmp_path / "content.json").read_text())["source"]["text"]
 
 
-def test_deploy_refuses_untagged_and_doubly_tagged_heads(env: dict[str, str], repo: Path) -> None:
-    git(repo, "commit", "-q", "--allow-empty", "-m", "b")
-    assert "has no tag" in run(["deploy", "hello", str(repo)], env).stderr
-    git(repo, "tag", "v2")
-    git(repo, "tag", "v2b")
-    assert "several tags" in run(["deploy", "hello", str(repo)], env).stderr
+@pytest.mark.parametrize("tag", ["-x", "a/b", "a b", "x;reboot", "x" * 129])
+def test_deploy_refuses_bad_tags_before_anything(env: dict[str, str], repo: Path, tmp_path: Path, tag: str) -> None:
+    result = run(["deploy", "hello", str(repo), tag], env)
+    assert result.returncode == 1 and "invalid TAG" in result.stderr
+    assert not calls(tmp_path, "docker") and not (tmp_path / "content.json").exists()
 
 
 def test_deploy_refuses_unknown_projects(env: dict[str, str], repo: Path, tmp_path: Path) -> None:

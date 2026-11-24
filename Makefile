@@ -47,9 +47,10 @@ command-result: ## Wait for a Run Command sent by make (ID=<command OCID>) and s
 # PROJECT and DIR, like CMD, go through the environment unexpanded.
 deploy: export AFP_PROJECT_NAME = $(value PROJECT)
 deploy: export AFP_PROJECT_DIR = $(value DIR)
-deploy: ## Build the tagged HEAD of DIR for the VM, push it and deploy it as PROJECT (waits)
-	@[ -n "$$AFP_PROJECT_NAME" ] && [ -n "$$AFP_PROJECT_DIR" ] || { echo "usage: make deploy PROJECT=<name> DIR=<repository>" >&2; exit 2; }
-	@$(ROOT)/scripts/project.sh deploy "$$AFP_PROJECT_NAME" "$$AFP_PROJECT_DIR"
+deploy: export AFP_DEPLOY_TAG = $(value TAG)
+deploy: ## Build DIR for the VM, push it and deploy it as PROJECT, version TAG (default: the UTC time) (waits)
+	@[ -n "$$AFP_PROJECT_NAME" ] && [ -n "$$AFP_PROJECT_DIR" ] || { echo "usage: make deploy PROJECT=<name> DIR=<directory> [TAG=<version>]" >&2; exit 2; }
+	@$(ROOT)/scripts/project.sh deploy "$$AFP_PROJECT_NAME" "$$AFP_PROJECT_DIR" $${AFP_DEPLOY_TAG:+"$$AFP_DEPLOY_TAG"}
 
 rollback: export AFP_PROJECT_NAME = $(value PROJECT)
 rollback: ## Deploy the previous version of PROJECT again (images and compose; not the DB)

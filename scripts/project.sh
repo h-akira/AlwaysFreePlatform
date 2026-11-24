@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Deploy a project from this machine, roll it back, or dump its DB.
 #
-# Usage: project.sh deploy PROJECT DIR
+# Usage: project.sh deploy PROJECT DIR [TAG]
 #        project.sh rollback PROJECT
 #        project.sh backup [PROJECT]
-#   deploy    DIR is the project's repository with compose.afp.yaml. Its HEAD
-#             must be clean and carry exactly one tag, which becomes the
-#             version. Builds the services with build: for the VM's CPU type
+#   deploy    DIR is the project's directory with compose.afp.yaml, as it is
+#             (it need not be a git repository). TAG is the version name;
+#             without it, the UTC time (YYYYMMDDTHHMMSSZ). A TAG deployed
+#             before is overwritten. Builds the services with build: for the VM's CPU type
 #             (stack output vm_arch), pushes them to OCIR (creating the
 #             repositories repo-afp-<project>/<service> when missing), puts
 #             compose.afp.yaml into the bucket, and runs afp deploy on the VM
@@ -74,18 +75,14 @@ ensure_repository() {
 }
 
 cmd_deploy() {
-  [[ $# -eq 2 ]] || usage
-  local project="$1" dir="$2" compose tag tags arch compartment prefix registry token services repo name
+  [[ $# -eq 2 || $# -eq 3 ]] || usage
+  local project="$1" dir="$2" tag="${3:-$(date -u +%Y%m%dT%H%M%SZ)}"
+  local compose arch compartment prefix registry token services repo name
   check_project "$project"
+  [[ "$tag" =~ $TAG_RE ]] || die "invalid TAG $tag: letters, digits and _ . - (not first), up to 128 characters"
   dir="$(cd "$dir" && pwd)" || die "no such directory: $2"
   compose="$dir/compose.afp.yaml"
   [[ -f "$compose" ]] || die "$compose not found"
-  [[ -z "$(git -C "$dir" status --porcelain)" ]] || die "$dir has uncommitted changes"
-  tags="$(git -C "$dir" tag --points-at HEAD)"
-  [[ -n "$tags" ]] || die "HEAD of $dir has no tag; tag the version to deploy"
-  [[ "$(printf '%s\n' "$tags" | wc -l | tr -d ' ')" == "1" ]] || die "HEAD of $dir has several tags: $(echo $tags)"
-  tag="$tags"
-  [[ "$tag" =~ $TAG_RE ]] || die "tag $tag cannot be a Docker tag"
 
   load_outputs
   BUCKET="$(out bucket)"

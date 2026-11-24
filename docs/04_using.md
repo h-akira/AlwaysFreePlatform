@@ -59,8 +59,7 @@ networks:
     external: true
 ```
 
-- `AFP_TAG` は、デプロイする版の名前（版のタグの名前）。
-- 例の `healthcheck` の 8080 は、§1 で伝えたポートに合わせる。
+- `AFP_TAG` は、デプロイする版の名前（自動のデプロイでは版のタグの名前、手元からのデプロイでは時刻か指定した名前。02 §5.6）。
 - リポジトリを基盤に伝えたプロジェクトは、さらに **`build_spec.yaml`**（OCI DevOps のビルドの手順）を、リポジトリの一番上に置く。基盤のリポジトリの `examples/hello/build_spec.yaml` を写し、`AFP_TAG` の指定と「release with the platform」の手順は変えない。その前に、自分の手順（テストなど）を足してよい。
   - 出すときは、コミットに `v` で始まるタグを 1 つ付け、`release` ブランチとタグを 1 回の push で送る（例: `git push --atomic origin HEAD:release v1.2.3`）。`release` への push で、ビルドとデプロイが動く。ビルドは基盤の VM の上で行われる。
   - タグが無い・複数あるときにデプロイしないことは、02 §5.6 のとおり（失敗のメールが届く）。タグをあとから送っても、やり直されない。`release` とタグを別々に送ると、タグが届く前にビルドが始まり、同じことが起きるおそれがある（未確認）。
@@ -75,7 +74,7 @@ networks:
 | 変数 | 中身 |
 |---|---|
 | `AFP_IMAGE_PREFIX` | イメージの置き場所。OCIR の、このプロジェクト用の名前の頭（例: `iad.ocir.io/<namespace>/repo-afp-app-a`） |
-| `AFP_TAG` | デプロイする版（版のタグの名前） |
+| `AFP_TAG` | デプロイする版の名前 |
 | `AFP_PROJECT` | プロジェクトの名前 |
 | `AFP_DOMAIN` | プロジェクトのドメイン（`<名前>.<基盤のゾーン>`） |
 | `AFP_DB_HOST`・`AFP_DB_PORT` | DB の接続先 |
