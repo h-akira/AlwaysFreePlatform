@@ -25,8 +25,9 @@ from afp.oci import Oci  # noqa: E402
 REGION = "us-ashburn-1"
 DB_PASSWORD = "Ab3-xyz_DEF.ghi~jkl"
 ADMIN_PASSWORD = "Admin-Pass_1"
-SIGNING_KEY = "sign-Key_123"
-API_KEY = "api'key$with\"quotes"
+EXAMPLE_SIGNING_KEY = "sign-Key_123"
+EXAMPLE_API_KEY = "api'key$with\"quotes"
+EXAMPLE_SETTING = "on $and \"quoted\""
 
 
 def afp_json(projects: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -34,16 +35,16 @@ def afp_json(projects: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "region": REGION,
         "namespace": "ns",
         "bucket": "bucket-afp-main",
-        "platform_repository": "https://github.com/example/platform",
         "db": {"host": "10.0.1.10", "port": 3306, "admin_user": "afpadmin", "admin_secret_id": "ocid1.vaultsecret.oc1..admin"},
         "image_prefix_base": "iad.ocir.io/ns",
         "compartment_id": "ocid1.compartment.oc1..afp",
         "projects": projects
         if projects is not None
         else [
-            {"name": "hello", "domain": "hello.example.com", "secret_id": "ocid1.vaultsecret.oc1..hello", "manual_secret_ids": {}},
+            {"name": "hello", "domain": "hello.example.com", "secret_id": "ocid1.vaultsecret.oc1..hello"},
             {"name": "app-a", "domain": "app-a.example.net", "secret_id": "ocid1.vaultsecret.oc1..appa",
-             "manual_secret_ids": {"API_KEY": "ocid1.vaultsecret.oc1..apikey"}},
+             "secret_ids": {"EXAMPLE_API_KEY": "ocid1.vaultsecret.oc1..apikey"},
+             "env": {"EXAMPLE_SETTING": EXAMPLE_SETTING}},
         ],
     }
 
@@ -58,8 +59,8 @@ class World:
         self.secrets = {
             "ocid1.vaultsecret.oc1..admin": ADMIN_PASSWORD,
             "ocid1.vaultsecret.oc1..hello": json.dumps({"AFP_DB_PASSWORD": DB_PASSWORD}),
-            "ocid1.vaultsecret.oc1..appa": json.dumps({"AFP_DB_PASSWORD": DB_PASSWORD, "SIGNING_KEY": SIGNING_KEY}),
-            "ocid1.vaultsecret.oc1..apikey": API_KEY,
+            "ocid1.vaultsecret.oc1..appa": json.dumps({"AFP_DB_PASSWORD": DB_PASSWORD, "EXAMPLE_SIGNING_KEY": EXAMPLE_SIGNING_KEY}),
+            "ocid1.vaultsecret.oc1..apikey": EXAMPLE_API_KEY,
         }
         self.files: dict[str, bytes] = {}  # binary objects (source archives)
         self.repositories: set[str] = set()  # OCIR repositories

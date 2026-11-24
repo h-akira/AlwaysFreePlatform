@@ -6,17 +6,22 @@ secret only in the response to its creation, and the OCI provider drops it.
 scripts/stack.sh therefore runs this around its Resource Manager jobs, so that
 make apply and make destroy still bring everything in line with the settings.
 
+Each trigger's webhook secret is kept in a Vault secret that this script
+makes together with the trigger and deletes together with it (ADR 039); it is
+tagged afp-webhook=<project>. Terraform does not hold it.
+
 Usage: triggers.py prune|create|delete-all
-  prune       Before apply: delete the triggers of projects that no longer have
-              a repository in terraform.tfvars.json.
+  prune       Before apply: delete the triggers (and their webhook secrets) of
+              projects that no longer have a repository in terraform.tfvars.json.
   create      After apply: create the trigger of each project in the stack
               output "pipelines" that has none (or whose trigger points at
-              another build pipeline), and put its webhook secret into the
-              project's Vault secret. The secret is never printed; the trigger
-              URL and the name of the Vault secret are, for the GitHub webhook.
-              A trigger whose filter differs is updated in place, which keeps
-              its URL and secret.
-  delete-all  Before destroy: delete every trigger of the DevOps project.
+              another build pipeline, or has no webhook secret), and make its
+              Vault secret with the webhook secret. The secret is never printed;
+              the trigger URL and the Vault secret's OCID are, for the GitHub
+              webhook. A trigger whose filter differs is updated in place, which
+              keeps its URL and secret.
+  delete-all  Before destroy: delete every trigger of the DevOps project and
+              every webhook secret.
 
 Reads the main stack outputs (KEY=VALUE lines, as `stack.sh main outputs`
 prints them) from stdin. A trigger is found by its name, trigger-afp-<project>; what
@@ -32,16 +37,19 @@ from __future__ import annotations
 import base64
 import json
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-# Which pushes start a build: the branch release (ADR 029). The version is the
+# Which pushes start a build: the branch release (ADR 038). The version is the
 # tag v* on its head commit (scripts/devops-release.sh).
 HEAD_REF = "release"
 EVENTS = ["PUSH"]
+# Freeform tag that marks a Vault secret as the webhook secret of a project.
+WEBHOOK_TAG = "afp-webhook"
 
 
 class TriggerError(Exception):
@@ -129,50 +137,93 @@ class Oci:
             raise TriggerError(f"create-github-trigger for {name} returned no id, URL or secret")
         return d["id"], d["trigger-url"], d["secret"]
 
-    def put_secret(self, secret_id: str, value: str) -> None:
-        """New version of a Vault secret. The value goes through a private
-        file, not the command line, so that other processes cannot see it."""
+    def webhook_secrets(self, compartment_id: str) -> dict[str, list[str]]:
+        """Active webhook secrets: project => [OCID]."""
+        data = self.run("vault", "secret", "list", "--compartment-id", compartment_id, "--lifecycle-state", "ACTIVE", "--all")
+        result: dict[str, list[str]] = {}
+        for item in (data or {}).get("data", []):
+            project = (item.get("freeform-tags") or {}).get(WEBHOOK_TAG)
+            if project:
+                result.setdefault(project, []).append(item["id"])
+        return result
+
+    def create_secret(self, out: dict[str, str], project: str, value: str) -> str:
+        """Make the project's webhook secret; return its OCID. The value goes
+        through a private file, not the command line, so that other processes
+        cannot see it."""
+        body = {
+            "compartmentId": out["compartment_id"], "vaultId": out["vault_id"], "keyId": out["key_id"],
+            "secretName": f"secret-afp-{project}-webhook-{secrets.token_hex(4)}",
+            "description": f"AlwaysFreePlatform project {project}: webhook secret of its GitHub trigger (scripts/triggers.py)",
+            "freeformTags": {WEBHOOK_TAG: project},
+            "secretContentContent": base64.b64encode(value.encode()).decode(),
+        }
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "secret.json"
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump({"secretId": secret_id, "secretContentContent": base64.b64encode(value.encode()).decode()}, f)
-            self.run("vault", "secret", "update-base64", "--from-json", f"file://{path}", "--force")
+                json.dump(body, f)
+            data = self.run("vault", "secret", "create-base64", "--from-json", f"file://{path}")
+        secret_id = (data or {}).get("data", {}).get("id")
+        if not secret_id:
+            raise TriggerError(f"creating the webhook secret of {project} returned no id")
+        return secret_id
+
+    def delete_secret(self, secret_id: str) -> None:
+        """Schedule the deletion (a deleted secret stays pending for days)."""
+        self.run("vault", "secret", "schedule-secret-deletion", "--secret-id", secret_id)
+
+
+def delete_secrets(oci: Oci, ids: list[str]) -> None:
+    for secret_id in ids:
+        oci.delete_secret(secret_id)
 
 
 def prune(oci: Oci, outputs: dict[str, str], tfvars: dict[str, Any]) -> None:
     project_id = outputs.get("devops_project_id")
     if not project_id:
         return  # no DevOps project yet
-    keep = {trigger_name(p) for p in desired_projects(tfvars)}
+    desired = desired_projects(tfvars)
+    keep = {trigger_name(p) for p in desired}
     for name, trigger_id in sorted(oci.list_triggers(project_id).items()):
         if name not in keep:
             print(f"Deleting trigger {name} (its project has no repository any more) ...")
             oci.delete_trigger(trigger_id)
+    if outputs.get("compartment_id"):
+        for project, ids in sorted(oci.webhook_secrets(outputs["compartment_id"]).items()):
+            if project not in desired:
+                print(f"Deleting the webhook secret of {project} ...")
+                delete_secrets(oci, ids)
 
 
 def create(oci: Oci, outputs: dict[str, str]) -> None:
-    project_id = outputs.get("devops_project_id")
-    connection_id = outputs.get("devops_connection_id")
-    if not project_id or not connection_id:
-        raise TriggerError("stack outputs devops_project_id / devops_connection_id are missing")
     pipelines: dict[str, dict[str, str]] = json.loads(outputs.get("pipelines") or "{}")
+    if not pipelines:
+        return
+    missing = [k for k in ("devops_project_id", "devops_connection_id", "compartment_id", "vault_id", "key_id")
+               if not outputs.get(k) or outputs[k] == "null"]
+    if missing:
+        raise TriggerError(f"stack outputs {', '.join(missing)} are missing")
+    project_id, connection_id = outputs["devops_project_id"], outputs["devops_connection_id"]
     existing = oci.list_triggers(project_id)
+    webhook = oci.webhook_secrets(outputs["compartment_id"])
     for project, p in sorted(pipelines.items()):
         name = trigger_name(project)
         if name in existing:
             pipeline, events, head_ref = oci.trigger_action(existing[name])
-            if pipeline == p["build_pipeline_id"]:
+            if pipeline == p["build_pipeline_id"] and len(webhook.get(project, [])) == 1:
                 if events != EVENTS or head_ref != HEAD_REF:
                     print(f"Updating the filter of trigger {name} (push to {HEAD_REF}) ...")
                     oci.update_trigger(existing[name], p["build_pipeline_id"])
                 continue
-            print(f"Trigger {name} points at another build pipeline; recreating it ...")
+            why = "points at another build pipeline" if pipeline != p["build_pipeline_id"] else "has no webhook secret of its own"
+            print(f"Trigger {name} {why}; recreating it ...")
             oci.delete_trigger(existing[name])
+        delete_secrets(oci, webhook.get(project, []))
         print(f"Creating trigger {name} ...")
         trigger_id, url, secret = oci.create_trigger(project_id, connection_id, name, p["build_pipeline_id"])
         try:
-            oci.put_secret(p["webhook_secret_id"], secret)
+            secret_id = oci.create_secret(outputs, project, secret)
         except TriggerError:
             # A trigger whose secret nobody knows is useless; the next apply
             # creates it again.
@@ -181,8 +232,8 @@ def create(oci: Oci, outputs: dict[str, str]) -> None:
         print(
             f"Created trigger {name}. Register a webhook in the GitHub repository of {project}:\n"
             f"  Payload URL: {url}\n"
-            f"  Secret:      Vault secret {p['webhook_secret_name']}; copy it with:\n"
-            f"    oci secrets secret-bundle get --region {oci.region} --secret-id {p['webhook_secret_id']}"
+            f"  Secret:      in Vault secret {secret_id}; copy it with:\n"
+            f"    oci secrets secret-bundle get --region {oci.region} --secret-id {secret_id}"
             " --query 'data.\"secret-bundle-content\".content' --raw-output | base64 -d | pbcopy\n"
             "  Content type: application/json; events: Just the push event."
         )
@@ -196,6 +247,10 @@ def delete_all(oci: Oci, outputs: dict[str, str]) -> None:
     for name, trigger_id in sorted(oci.list_triggers(project_id).items()):
         print(f"Deleting trigger {name} ...")
         oci.delete_trigger(trigger_id)
+    if outputs.get("compartment_id"):
+        for project, ids in sorted(oci.webhook_secrets(outputs["compartment_id"]).items()):
+            print(f"Deleting the webhook secret of {project} ...")
+            delete_secrets(oci, ids)
 
 
 def main(argv: list[str]) -> int:

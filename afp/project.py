@@ -66,7 +66,9 @@ def registry(cfg: Config) -> str:
 
 
 def compose_env(cfg: Config, p: Project, tag: str, secrets: dict[str, str]) -> dict[str, str]:
-    env = {name: value for name, value in secrets.items() if name != "AFP_DB_PASSWORD"}
+    """Settings (env), secrets (generated and made by hand), then the AFP_* values."""
+    env = dict(p.env)
+    env.update({name: value for name, value in secrets.items() if name != "AFP_DB_PASSWORD"})
     env.update(
         {
             "AFP_IMAGE_PREFIX": f"{cfg.image_prefix_base}/repo-afp-{p.name}",
@@ -191,7 +193,9 @@ class Projects:
             raise AfpError(f"the secret of project {p.name} is not a JSON object of strings")
         values.update(data)
         db.project_password(text, p.name)  # checks AFP_DB_PASSWORD
-        for name, secret_id in p.manual_secret_ids.items():
+        for name, secret_id in p.secret_ids.items():
+            if name in values:
+                raise AfpError(f"{name} of project {p.name} is both generated and made by hand")
             values[name] = self.oci.secret(secret_id)
         return values
 

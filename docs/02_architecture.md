@@ -61,13 +61,13 @@ flowchart TB
 | **OCI DNS** | 基盤の公開 DNS のゾーン。プロジェクトごとの名前（`<プロジェクト>.<ゾーン>`）を、その VM の公開 IP に向ける（§5.4） |
 | **`afp`** | 基盤のコマンド（Python の標準ライブラリだけで書く。§5.8）。VM の上で、初期設定・プロジェクトの一覧に合わせた同期（プロジェクトの DB とユーザの作成を含む）・デプロイ・バックアップ・基盤のヘルスチェックを受け持つ。外からは、VM の中のエージェント（Oracle Cloud Agent の Run Command）を通して呼ぶ（§5.6） |
 | **MySQL HeatWave** | 全プロジェクトで共有する DB。プロジェクトごとにデータベースとユーザを分ける |
-| **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る） |
+| **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る）。外から持ってくる秘密の値（GitHub のトークン・外部の API キー）は、管理者が手で作る（§5.5） |
 | **Object Storage** | プロジェクトの一覧・各プロジェクトの今の版・リリース一式・DB のダンプ・`afp` の操作のログ |
 | **OCIR**（OCI のコンテナ・レジストリ。[references/oci-registry.md](references/oci-registry.md)） | ビルドしたイメージ。リポジトリはプロジェクトのサービスごと |
 | **OCI DevOps** | リポジトリを伝えたプロジェクトの `release` ブランチへの push を受けて、そのプロジェクトのリリース一式を Object Storage に置き、VM に `afp deploy` を実行させる（§5.6） |
 | **OCI Monitoring・Notifications** | 基盤のヘルスチェック（§5.7）の結果を受け、失敗したり届かなくなったりしたらメールで知らせる |
 | **OCI Bastion** | 手元からプライベート・サブネットの DB に入るための、一時的な入口（§5.9） |
-| **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものをすべて作る。プロジェクトの一覧から、プロジェクトごとのシークレットとパイプラインも作る |
+| **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものを作る。プロジェクトの一覧から、プロジェクトごとの生成するシークレットとパイプラインも作る。手元の `terraform/` を、そのまま（git に頼らず）送って実行する |
 
 - **VM の外は Terraform、VM の中は `afp`** が受け持つ。`afp` は Terraform が書いたプロジェクトの一覧に従う。
 - プロジェクトの DB とユーザは、Terraform でなく VM の `afp` が、Vault に置いた DB の管理者のパスワードで作る。
@@ -97,7 +97,7 @@ VM の中には失って困るものを置かない。
 | 各プロジェクトの今の版 | Object Storage（デプロイが成功したら `afp` が書く） |
 | イメージ | OCIR |
 | リリース一式 | Object Storage（デプロイが版ごとに置く） |
-| 基盤のコード | この公開リポジトリ。どのタグを使うかは Object Storage に置き、VM はそのタグのコードを取る（§5.6） |
+| 基盤のコード | Object Storage の `platform.tar.gz`（管理者の手元のコードを、そのまま `make platform` が置く。§5.6） |
 | HTTPS の証明書 | VM の中。消えたら Caddy が自動で取り直す |
 | ログ | VM の中（消えてよい）。`afp` の操作のログは Object Storage |
 
@@ -151,7 +151,13 @@ sequenceDiagram
 
 ### 5.5 シークレット
 
-- プロジェクトのシークレットを OCI Vault に置く。VM はインスタンス・プリンシパル（VM そのものに与える権限）で読み、`docker compose` を起動するプロセスの環境変数として渡す。環境変数のファイルは作らない。
+- プロジェクトに渡す値は 3 種類に分ける。
+  - **設定値**（秘密でないもの）: 非公開の設定に、値をそのまま書く。Vault を通さない。
+  - **生成するシークレット**: Terraform が生成して Vault に置く。
+  - **手で作るシークレット**（外から持ってくる秘密の値）: 管理者が Vault に手で作り、非公開の設定にはその OCID だけを書く。Terraform は作らない。
+- **Terraform が作ったものを、人やスクリプトがあとから上書きすることはしない**。GitHub のトークンも手で作るシークレットにする。webhook の Secret は、トリガーと一緒に `make apply` の中のスクリプトが作り、トリガーと一緒に消す。
+- 手で作るシークレットは、基盤の Vault の、基盤のコンパートメントに置く。本体のスタックを作り直しても残る。
+- VM はシークレットをインスタンス・プリンシパル（VM そのものに与える権限）で読み、設定値と一緒に、`docker compose` を起動するプロセスの環境変数として渡す。環境変数のファイルは作らない。
 - **コンテナからは、VM のメタデータ（`169.254.169.254`）への通信を、VM の初期設定で落とす**。同じ IP の 53 番（VCN の DNS）だけは通す。メタデータの古い口（v1）も止める。
 
 ### 5.6 デプロイ
@@ -160,7 +166,8 @@ sequenceDiagram
 - 手元からのデプロイは、プロジェクトのディレクトリをそのまま使い、git を前提にしない（コミットやタグが無くてよい）。版の名前は、指定しなければ UTC の時刻（例: `20261124T012345Z`）、指定すればその名前。同じ名前を指定すれば上書きする。
 - 自動のデプロイでは、**プロジェクトのリポジトリ** の `release` ブランチに push すると、そのプロジェクトだけをビルドし、VM でデプロイするところまで自動で行う。デプロイした版の名前は、`release` の先頭のコミットに付いた `v` で始まるタグ（例: `v1.2.3`）の名前そのもの。そのようなタグが無い、または複数あるときは、デプロイしない。
 - パイプラインは、プロジェクトの一覧でリポジトリを伝えたプロジェクトにだけ作る。伝えないプロジェクトは、管理者が手元からデプロイする（下の「DevOps が使えないとき」と同じ道）。伝えるかは、あとから変えられる。
-- **基盤のコードも、タグで版を決めて VM に届ける**。どのタグを使うかを Object Storage に置き、VM はそのタグのコードを公開リポジトリから取って入れ替える。入れ替えるのは、VM の起動のたびと、管理者が Run Command で呼んだときに流れる起動のスクリプト（`afp` の外の固定のスクリプト）で、`afp` 自身は入れ替えない。
+- **基盤のコードは、git とタグに頼らずに VM に届ける**。`make platform` が、管理者の手元のコードをそのまま（コミットしていなくても）固めて Object Storage に置き、VM はそれを取って入れ替える。自動のデプロイのビルドも、そこから基盤のスクリプトを取る。基盤のリポジトリのタグは、管理のために任意で付けるもので、デプロイには関係しない。
+- 入れ替えるのは、VM の起動のたびと、管理者が Run Command で呼んだときに流れる起動のスクリプト（`afp` の外の固定のスクリプト）で、`afp` 自身は入れ替えない。起動のスクリプトそのものは、VM を作り直したときに入る。
 - VM でデプロイを実行するのは、DevOps の **インスタンス・グループへのデプロイ**。VM の中の **Oracle Cloud Agent**（OCI のイメージに入っているエージェント）の **Run Command** のプラグインが、`afp deploy <プロジェクト> <版>` を実行する（[references/oci-devops.md](references/oci-devops.md)・[references/oci-run-command.md](references/oci-run-command.md)）。
 - DevOps が使えないときは、手元から同じ Run Command を直接呼んで `afp deploy` を実行させる。
 - デプロイには ssh を使わない。
@@ -170,11 +177,11 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 | 共有する（基盤が1つだけ持つ） | プロジェクトごと（リポジトリを伝えたプロジェクトに、`make apply` が作る） |
 |---|---|
 | DevOps のプロジェクト（パイプラインを入れる箱） | ビルドのパイプライン・デプロイのパイプライン |
-| GitHub への接続（非公開のリポジトリを読むためのトークンは基盤で 1 本。Vault に置き、値は管理者が入れる） | トリガー（どのリポジトリの、`release` への push で動くか）と webhook の Secret（Vault） |
+| GitHub への接続（非公開のリポジトリを読むためのトークンは基盤で 1 本。管理者が手で作るシークレット） | トリガー（どのリポジトリの、`release` への push で動くか）と webhook の Secret（Vault。トリガーと一緒に作り、一緒に消す） |
 | 通知の宛先（成否のメール） | イメージとリリース一式の置き場所 |
 | DevOps に与える OCI の権限 | — |
 
-- トリガーだけは Terraform で作らず、`make apply` の中で OCI CLI が作る・消す・絞りを直す（Terraform では webhook の Secret が得られないため）。`make apply` で設定どおりになり、`make destroy` で消えるのは、ほかの資源と同じ。
+- トリガーと webhook の Secret だけは Terraform で作らず、`make apply` の中で OCI CLI が作る・消す・絞りを直す（Terraform では webhook の Secret が得られないため）。`make apply` で設定どおりになり、`make destroy` で消えるのは、ほかの資源と同じ。
 - GitHub の側の webhook は、パイプラインを作ったときに、管理者が GitHub の画面で登録する。URL は `make apply` が表示し、Secret は Vault からコピーする。
 - **パイプラインはプロジェクトごとに独立させる**。あるプロジェクトの push は、そのプロジェクトのパイプラインだけを動かす。
 - ビルドは、プロジェクトの間で並んで走ってもよい。

@@ -27,8 +27,12 @@ DEFAULT_PORT = 8080
 class Project:
     name: str
     domain: str
+    # The project's JSON secret: AFP_DB_PASSWORD and the generated secrets.
     secret_id: str
-    manual_secret_ids: dict[str, str] = field(default_factory=dict)
+    # Secrets made by hand: NAME => OCID (ADR 039).
+    secret_ids: dict[str, str] = field(default_factory=dict)
+    # Settings that are not secret: NAME => value.
+    env: dict[str, str] = field(default_factory=dict)
     # Where the entrance service listens for HTTP (older afp.json files lack it).
     port: int = DEFAULT_PORT
 
@@ -51,7 +55,6 @@ class Config:
     region: str
     namespace: str
     bucket: str
-    platform_repository: str
     db: Db
     image_prefix_base: str
     projects: list[Project]
@@ -67,6 +70,17 @@ def _str(data: dict[str, Any], key: str, where: str) -> str:
     return value
 
 
+def _names(data: dict[str, Any], key: str, project: str) -> dict[str, str]:
+    """{NAME: string} with names usable as environment variables (not AFP_*)."""
+    value = data.get(key) or {}
+    if not isinstance(value, dict) or not all(
+        isinstance(k, str) and SECRET_NAME.match(k) and not k.startswith("AFP_") and isinstance(v, str)
+        for k, v in value.items()
+    ):
+        raise AfpError(f"afp.json: invalid {key} of project {project}")
+    return dict(value)
+
+
 def _project(data: Any, index: int) -> Project:
     where = f"projects[{index}]."
     if not isinstance(data, dict):
@@ -77,17 +91,15 @@ def _project(data: Any, index: int) -> Project:
     domain = _str(data, "domain", where)
     if not DOMAIN.match(domain):
         raise AfpError(f"afp.json: invalid domain {domain!r} of project {name}")
-    manual = data.get("manual_secret_ids") or {}
-    if not isinstance(manual, dict) or not all(
-        isinstance(k, str) and SECRET_NAME.match(k) and not k.startswith("AFP_") and isinstance(v, str)
-        for k, v in manual.items()
-    ):
-        raise AfpError(f"afp.json: invalid manual_secret_ids of project {name}")
+    secret_ids = _names(data, "secret_ids", name)
+    env = _names(data, "env", name)
+    if set(secret_ids) & set(env):
+        raise AfpError(f"afp.json: {', '.join(sorted(set(secret_ids) & set(env)))} of project {name} is in both env and secret_ids")
     port = data.get("port", DEFAULT_PORT)
     if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
         raise AfpError(f"afp.json: invalid port {port!r} of project {name}")
     return Project(
-        name=name, domain=domain, secret_id=_str(data, "secret_id", where), manual_secret_ids=dict(manual), port=port
+        name=name, domain=domain, secret_id=_str(data, "secret_id", where), secret_ids=secret_ids, env=env, port=port
     )
 
 
@@ -115,7 +127,6 @@ def parse(text: str) -> Config:
         region=_str(data, "region", ""),
         namespace=_str(data, "namespace", ""),
         bucket=_str(data, "bucket", ""),
-        platform_repository=_str(data, "platform_repository", ""),
         db=Db(host=host, port=port, admin_user=_str(db, "admin_user", "db."), admin_secret_id=_str(db, "admin_secret_id", "db.")),
         image_prefix_base=_str(data, "image_prefix_base", ""),
         projects=projects,

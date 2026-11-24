@@ -87,7 +87,7 @@ module "secrets" {
   compartment_id = local.compartment_id
   vault_id       = data.oci_kms_vaults.afp.vaults[0].id
   key_id         = data.oci_kms_keys.afp.keys[0].id
-  projects       = [for p in var.projects : { name = p.name, pipeline = p.repository != null, secrets = p.secrets }]
+  projects       = [for p in var.projects : { name = p.name, generate = p.generate }]
 }
 
 module "network" {
@@ -127,10 +127,9 @@ module "storage" {
   compartment_id = local.compartment_id
   bucket_name    = local.bucket_name
   afp_config = {
-    region              = var.region
-    namespace           = data.oci_objectstorage_namespace.this.namespace
-    bucket              = local.bucket_name
-    platform_repository = var.platform_repository
+    region    = var.region
+    namespace = data.oci_objectstorage_namespace.this.namespace
+    bucket    = local.bucket_name
     db = {
       host            = module.database.ip_address
       port            = module.database.port
@@ -141,11 +140,12 @@ module "storage" {
     # Where afp creates OCIR repositories when it builds on the VM.
     compartment_id = local.compartment_id
     projects = [for p in var.projects : {
-      name              = p.name
-      domain            = local.domains[p.name]
-      port              = p.port
-      secret_id         = module.secrets.project_secrets[p.name].secret_id
-      manual_secret_ids = module.secrets.project_secrets[p.name].manual_secret_ids
+      name       = p.name
+      domain     = local.domains[p.name]
+      port       = p.port
+      secret_id  = module.secrets.project_secret_ids[p.name]
+      env        = p.env
+      secret_ids = p.secrets
     }]
   }
 }
@@ -200,7 +200,7 @@ module "devops" {
   compartment_id         = local.compartment_id
   compartment_name       = local.compartment_name
   bucket_name            = local.bucket_name
-  github_token_secret_id = module.secrets.github_token_secret_id
+  github_token_secret_id = var.github_token_secret_id
   notification_email     = var.notification_email
   vm_instance_id         = module.vm.instance_id
   projects = [for p in var.projects : {

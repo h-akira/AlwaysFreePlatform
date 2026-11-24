@@ -4,10 +4,11 @@ on the fake VM of tests/afp_world.py."""
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pytest
-from afp_world import API_KEY, DB_PASSWORD, SIGNING_KEY, World, make_ctx
+from afp_world import DB_PASSWORD, EXAMPLE_API_KEY, EXAMPLE_SETTING, EXAMPLE_SIGNING_KEY, World, make_ctx
 
 from afp import cli
 from afp import project as pm
@@ -42,14 +43,15 @@ def test_values_go_through_the_environment(tmp_path: Path) -> None:
         "AFP_DB_NAME": "app_a",
         "AFP_DB_USER": "app_a",
         "AFP_DB_PASSWORD": DB_PASSWORD,
-        "SIGNING_KEY": SIGNING_KEY,
-        "API_KEY": API_KEY,  # quotes and $ pass as they are; no env file to escape
+        "EXAMPLE_SIGNING_KEY": EXAMPLE_SIGNING_KEY,  # generated
+        "EXAMPLE_API_KEY": EXAMPLE_API_KEY,  # made by hand; quotes and $ pass as they are
+        "EXAMPLE_SETTING": EXAMPLE_SETTING,  # a setting from env, not a secret
     }
     # Started without waiting for health checks (ADR 036).
     assert "--no-build" in up["args"] and not any(a.startswith("--wait") for a in up["args"])
     for call in world.calls:
         joined = " ".join(call["args"])
-        assert DB_PASSWORD not in joined and API_KEY not in joined and SIGNING_KEY not in joined
+        assert DB_PASSWORD not in joined and EXAMPLE_API_KEY not in joined and EXAMPLE_SIGNING_KEY not in joined
     # docker login reads the token from stdin.
     [login] = [c for c in world.calls if c["args"][:2] == ["docker", "login"]]
     assert login["args"][2:5] == ["iad.ocir.io", "-u", "BEARER_TOKEN"] and login["stdin"] == "tok"
@@ -280,3 +282,11 @@ def test_build_services() -> None:
     assert pm.build_services(config, prefix) == [("web", "repo-afp-app-a/web"), ("worker", "repo-afp-app-a/worker")]
     with pytest.raises(AfpError, match="nothing to build"):
         pm.build_services({"services": {"db": {"image": "mysql:8"}}}, prefix)
+
+
+def test_a_name_both_generated_and_made_by_hand_is_refused(tmp_path: Path) -> None:
+    world = World()
+    world.secrets["ocid1.vaultsecret.oc1..appa"] = json.dumps({"AFP_DB_PASSWORD": DB_PASSWORD, "EXAMPLE_API_KEY": "x"})
+    with pytest.raises(AfpError, match="EXAMPLE_API_KEY of project app-a is both generated and made by hand"):
+        deploy(world, tmp_path, "app-a", "v1")
+    assert world.running == {}

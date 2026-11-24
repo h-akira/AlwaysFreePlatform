@@ -23,7 +23,8 @@ variable "bucket_name" {
   type = string
 }
 
-# Vault secret holding the GitHub token (the administrator sets its value).
+# Vault secret holding the GitHub token, made by the administrator by hand
+# (ADR 039); null when no project has a repository.
 variable "github_token_secret_id" {
   type = string
 }
@@ -97,12 +98,18 @@ resource "oci_logging_log" "devops" {
   }
 }
 
+moved {
+  from = oci_devops_connection.github
+  to   = oci_devops_connection.github[0]
+}
+
 resource "oci_devops_connection" "github" {
+  count           = var.github_token_secret_id == null ? 0 : 1
   project_id      = oci_devops_project.afp.id
   connection_type = "GITHUB_ACCESS_TOKEN"
   access_token    = var.github_token_secret_id
   display_name    = "connection-afp-github"
-  description     = "GitHub, with the platform's token (ADR 023)"
+  description     = "GitHub, with the platform's token (ADR 039)"
 }
 
 # The platform's VM; recreating the VM updates the environment.
@@ -132,21 +139,24 @@ resource "oci_identity_policy" "devops" {
   compartment_id = var.compartment_id
   name           = "policy-afp-devops"
   description    = "What the AlwaysFreePlatform DevOps resources may do"
-  statements = [
+  statements = concat(
     # The connection and the build read the GitHub token, and no other secret.
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read secret-family in compartment ${local.c} where target.secret.id = '${var.github_token_secret_id}'",
-    # Build: push images (creating repositories), read afp.json and
-    # platform.json, put the release bundle, start the deployment, notify.
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to manage repos in compartment ${local.c}",
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read buckets in compartment ${local.c} where target.bucket.name = '${var.bucket_name}'",
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to manage objects in compartment ${local.c} where target.bucket.name = '${var.bucket_name}'",
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to manage devops-family in compartment ${local.c}",
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to use ons-topics in compartment ${local.c}",
-    # Deployment to the instance group: run commands on the VM.
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read all-artifacts in compartment ${local.c}",
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read instance-family in compartment ${local.c}",
-    "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to use instance-agent-command-family in compartment ${local.c}",
-  ]
+    var.github_token_secret_id == null ? [] : [
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read secret-family in compartment ${local.c} where target.secret.id = '${var.github_token_secret_id}'",
+    ],
+    [
+      # Build: push images (creating repositories), read platform.tar.gz,
+      # put the release bundle, start the deployment, notify.
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to manage repos in compartment ${local.c}",
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read buckets in compartment ${local.c} where target.bucket.name = '${var.bucket_name}'",
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to manage objects in compartment ${local.c} where target.bucket.name = '${var.bucket_name}'",
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to manage devops-family in compartment ${local.c}",
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to use ons-topics in compartment ${local.c}",
+      # Deployment to the instance group: run commands on the VM.
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read all-artifacts in compartment ${local.c}",
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to read instance-family in compartment ${local.c}",
+      "Allow dynamic-group ${oci_identity_dynamic_group.devops.name} to use instance-agent-command-family in compartment ${local.c}",
+  ])
 }
 
 # ---- per project ----
@@ -232,7 +242,7 @@ resource "oci_devops_build_pipeline" "project" {
     items {
       name          = "AFP_BUCKET"
       default_value = var.bucket_name
-      description   = "Bucket holding afp.json, platform.json and the release bundles"
+      description   = "Bucket holding afp.json, platform.tar.gz and the release bundles"
     }
   }
 }
@@ -267,10 +277,10 @@ resource "oci_devops_build_pipeline_stage" "build" {
     items {
       name            = "project"
       connection_type = "GITHUB"
-      connection_id   = oci_devops_connection.github.id
+      connection_id   = oci_devops_connection.github[0].id
       repository_url  = each.value.repository
       # The trigger builds the pushed branch; a run started by hand builds
-      # this one. Both are release (ADR 029).
+      # this one. Both are release (ADR 038).
       branch = "release"
     }
   }
@@ -296,7 +306,7 @@ output "project_id" {
 }
 
 output "connection_id" {
-  value = oci_devops_connection.github.id
+  value = one(oci_devops_connection.github[*].id)
 }
 
 output "build_pipeline_ids" {

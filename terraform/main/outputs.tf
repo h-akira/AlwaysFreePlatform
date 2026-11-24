@@ -24,8 +24,12 @@ output "db_admin_secret_id" {
   value = module.secrets.db_admin_secret_id
 }
 
-output "github_token_secret_id" {
-  value = module.secrets.github_token_secret_id
+output "vault_id" {
+  value = data.oci_kms_vaults.afp.vaults[0].id
+}
+
+output "key_id" {
+  value = data.oci_kms_keys.afp.keys[0].id
 }
 
 output "bucket" {
@@ -60,14 +64,15 @@ output "devops_connection_id" {
   value = module.devops.connection_id
 }
 
-# Read by scripts/triggers.py: {project: {build_pipeline_id, webhook_secret_id,
-# webhook_secret_name}} for the projects with a repository.
+# Read by scripts/triggers.py: {project: {build_pipeline_id}} for the projects
+# with a repository. It also makes their webhook secrets (ADR 039).
 output "pipelines" {
-  value = { for name, id in module.devops.build_pipeline_ids : name => {
-    build_pipeline_id   = id
-    webhook_secret_id   = module.secrets.webhook_secrets[name].id
-    webhook_secret_name = module.secrets.webhook_secrets[name].name
-  } }
+  value = { for name, id in module.devops.build_pipeline_ids : name => { build_pipeline_id = id } }
+
+  precondition {
+    condition     = var.github_token_secret_id != null || alltrue([for p in var.projects : p.repository == null])
+    error_message = "Projects with a repository need github_token_secret_id: make the token's Vault secret by hand and write its OCID there."
+  }
 }
 
 output "domains" {

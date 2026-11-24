@@ -64,16 +64,6 @@ variable "ssh_public_key" {
   }
 }
 
-variable "platform_repository" {
-  description = "URL of the public platform repository on GitHub (https://github.com/<owner>/<repo>). The VM fetches its code from here."
-  type        = string
-
-  validation {
-    condition     = can(regex("^https://github\\.com/[^/]+/[^/]+$", var.platform_repository))
-    error_message = "platform_repository must look like https://github.com/<owner>/<repo> (no .git, no trailing slash)."
-  }
-}
-
 variable "vm_shape" {
   description = "Shape of the VM: VM.Standard.A1.Flex (arm64) when it can be created, else VM.Standard.E2.1.Micro (amd64). Flexible shapes (*.Flex) also use vm_ocpus and vm_memory_in_gbs. Changing the CPU type means rebuilding every project's images."
   type        = string
@@ -125,17 +115,21 @@ variable "projects" {
       port        Optional, default 8080. Port on which the project's entrance service
                   listens for HTTP; Caddy proxies <name>.<dns_zone> to <name>:<port>.
       vm          VM to run on; only "main" for now.
-      secrets     [{name, how}]: name in upper case (not AFP_*), how is "generate" or "manual".
+      env         Optional {NAME: value}: settings that are not secret, passed as they are.
+      generate    Optional [NAME]: secrets that Terraform generates (random strings).
+      secrets     Optional {NAME: OCID}: secrets made by hand in the platform's vault, in
+                  compartment-afp-main; Terraform neither makes nor reads them (ADR 039).
+                  NAMEs: upper-case letters, digits and "_", not starting with AFP_,
+                  unique across env, generate and secrets.
   EOT
   type = list(object({
     name       = string
     repository = optional(string)
     port       = optional(number, 8080)
     vm         = string
-    secrets = optional(list(object({
-      name = string
-      how  = string
-    })), [])
+    env        = optional(map(string), {})
+    generate   = optional(list(string), [])
+    secrets    = optional(map(string), {})
   }))
   default = []
 
@@ -167,15 +161,33 @@ variable "projects" {
   }
 
   validation {
-    condition = alltrue(flatten([for p in var.projects : [for s in p.secrets :
-      can(regex("^[A-Z][A-Z0-9_]*$", s.name)) && !startswith(s.name, "AFP_") && contains(["generate", "manual"], s.how)
+    condition = alltrue(flatten([for p in var.projects : [for n in concat(keys(p.env), p.generate, keys(p.secrets)) :
+      can(regex("^[A-Z][A-Z0-9_]*$", n)) && !startswith(n, "AFP_")
     ]]))
-    error_message = "projects[*].secrets: name must be upper-case letters, digits and \"_\", start with a letter and not start with AFP_; how must be \"generate\" or \"manual\"."
+    error_message = "projects[*]: names in env, generate and secrets must be upper-case letters, digits and \"_\", start with a letter and not start with AFP_."
   }
 
   validation {
-    condition     = alltrue([for p in var.projects : length(distinct([for s in p.secrets : s.name])) == length(p.secrets)])
-    error_message = "projects[*].secrets: names must be unique within a project."
+    condition = alltrue([for p in var.projects :
+      length(distinct(concat(keys(p.env), p.generate, keys(p.secrets)))) == length(keys(p.env)) + length(p.generate) + length(keys(p.secrets))
+    ])
+    error_message = "projects[*]: a name may appear only once across env, generate and secrets of a project."
+  }
+
+  validation {
+    condition     = alltrue(flatten([for p in var.projects : [for id in values(p.secrets) : can(regex("^ocid1\\.vaultsecret\\.", id))]]))
+    error_message = "projects[*].secrets: values must be OCIDs of Vault secrets (ocid1.vaultsecret...)."
+  }
+}
+
+variable "github_token_secret_id" {
+  description = "OCID of the Vault secret holding the GitHub token that OCI DevOps reads the projects' repositories with. The administrator makes it by hand in the platform's vault, in compartment-afp-main (ADR 039). Needed when a project has a repository."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.github_token_secret_id == null || can(regex("^ocid1\\.vaultsecret\\.", var.github_token_secret_id))
+    error_message = "github_token_secret_id must be the OCID of a Vault secret (ocid1.vaultsecret...)."
   }
 }
 

@@ -10,15 +10,12 @@ variable "key_id" {
   type = string
 }
 
-# var.projects of the main stack; pipeline is true when it has a repository.
+# Projects of the main stack, with the names of the secrets Terraform
+# generates. Secrets made by hand are not here (ADR 039).
 variable "projects" {
   type = list(object({
     name     = string
-    pipeline = bool
-    secrets = list(object({
-      name = string
-      how  = string
-    }))
+    generate = list(string)
   }))
 }
 
@@ -53,36 +50,12 @@ resource "oci_vault_secret" "db_admin_password" {
   }
 }
 
-# GitHub token that OCI DevOps reads the project repositories with; one for
-# the platform. Like the manual secrets: the administrator puts the token in as
-# a new secret version, which Terraform leaves alone.
-resource "oci_vault_secret" "github_token" {
-  compartment_id = var.compartment_id
-  vault_id       = var.vault_id
-  key_id         = var.key_id
-  secret_name    = "secret-afp-github-token-${random_id.suffix.hex}"
-  description    = "GitHub token for OCI DevOps (set the value by hand)"
-
-  secret_content {
-    content_type = "BASE64"
-    content      = base64encode("CHANGE_ME")
-  }
-
-  lifecycle {
-    ignore_changes = [secret_content]
-  }
-}
-
 locals {
   projects = { for p in var.projects : p.name => p }
   # "<project>/<NAME>" => {project, name}
   generated = merge([for p in var.projects : {
-    for s in p.secrets : "${p.name}/${s.name}" => { project = p.name, name = s.name } if s.how == "generate"
+    for n in p.generate : "${p.name}/${n}" => { project = p.name, name = n }
   }]...)
-  manual = merge([for p in var.projects : {
-    for s in p.secrets : "${p.name}/${s.name}" => { project = p.name, name = s.name } if s.how == "manual"
-  }]...)
-  pipelines = { for p in var.projects : p.name => p if p.pipeline }
 }
 
 # Same rules as the administrator's password (ADR 030).
@@ -104,15 +77,10 @@ resource "random_password" "generated" {
   min_special = 1
 }
 
-# One suffix per secret, so that a project (or a manual secret) removed and
-# added again does not collide with its own name that is still pending deletion.
+# One suffix per project, so that a project removed and added again does not
+# collide with its own name that is still pending deletion.
 resource "random_id" "project" {
   for_each    = local.projects
-  byte_length = 4
-}
-
-resource "random_id" "manual" {
-  for_each    = local.manual
   byte_length = 4
 }
 
@@ -134,66 +102,9 @@ resource "oci_vault_secret" "project" {
   }
 }
 
-# Manual secrets start with a placeholder; the project puts the real value in
-# as a new secret version, which Terraform leaves alone.
-resource "oci_vault_secret" "manual" {
-  for_each       = local.manual
-  compartment_id = var.compartment_id
-  vault_id       = var.vault_id
-  key_id         = var.key_id
-  secret_name    = "secret-afp-${each.value.project}-${each.value.name}-${random_id.manual[each.key].hex}"
-  description    = "AlwaysFreePlatform project ${each.value.project}: ${each.value.name} (set the value by hand)"
-
-  secret_content {
-    content_type = "BASE64"
-    content      = base64encode("CHANGE_ME")
-  }
-
-  lifecycle {
-    ignore_changes = [secret_content]
-  }
-}
-
-resource "random_id" "webhook" {
-  for_each    = local.pipelines
-  byte_length = 4
-}
-
-# Webhook secret of the project's GitHub trigger. The API returns it only when
-# the trigger is created; scripts/triggers.py then puts it in as a new secret
-# version, which Terraform leaves alone. The administrator copies it from here
-# into the GitHub webhook.
-resource "oci_vault_secret" "webhook" {
-  for_each       = local.pipelines
-  compartment_id = var.compartment_id
-  vault_id       = var.vault_id
-  key_id         = var.key_id
-  secret_name    = "secret-afp-${each.key}-webhook-${random_id.webhook[each.key].hex}"
-  description    = "AlwaysFreePlatform project ${each.key}: webhook secret of its GitHub trigger (set by make apply)"
-
-  secret_content {
-    content_type = "BASE64"
-    content      = base64encode("CHANGE_ME")
-  }
-
-  lifecycle {
-    ignore_changes = [secret_content]
-  }
-}
-
-output "webhook_secrets" {
-  value = { for name, _ in local.pipelines : name => {
-    id   = oci_vault_secret.webhook[name].id
-    name = oci_vault_secret.webhook[name].secret_name
-  } }
-}
-
-# Per project: the JSON secret and the manual secrets by name.
-output "project_secrets" {
-  value = { for name, p in local.projects : name => {
-    secret_id         = oci_vault_secret.project[name].id
-    manual_secret_ids = { for k, v in local.manual : v.name => oci_vault_secret.manual[k].id if v.project == name }
-  } }
+# Per project: the JSON secret (DB password and generated secrets).
+output "project_secret_ids" {
+  value = { for name, _ in local.projects : name => oci_vault_secret.project[name].id }
 }
 
 output "db_admin_password" {
@@ -203,8 +114,4 @@ output "db_admin_password" {
 
 output "db_admin_secret_id" {
   value = oci_vault_secret.db_admin_password.id
-}
-
-output "github_token_secret_id" {
-  value = oci_vault_secret.github_token.id
 }

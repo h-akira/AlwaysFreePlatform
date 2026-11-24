@@ -33,7 +33,9 @@ def test_parse_afp_json() -> None:
     assert cfg.db.port == 3306
     assert [p.name for p in cfg.projects] == ["hello", "app-a"]
     assert cfg.projects[1].db_name == "app_a"
-    assert cfg.projects[1].manual_secret_ids == {"API_KEY": "ocid1.vaultsecret.oc1..apikey"}
+    assert cfg.projects[1].secret_ids == {"EXAMPLE_API_KEY": "ocid1.vaultsecret.oc1..apikey"}
+    assert cfg.projects[1].env == {"EXAMPLE_SETTING": "on $and \"quoted\""}
+    assert cfg.projects[0].secret_ids == {} and cfg.projects[0].env == {}
     assert cfg.projects[0].port == 8080  # the default when afp.json has no port
 
 
@@ -57,7 +59,11 @@ def test_parse_without_projects() -> None:
         {"name": "x`;drop", "domain": "x.example.com", "secret_id": "s"},
         {"name": "x", "domain": "x.example.com {\n}", "secret_id": "s"},
         {"name": "x", "domain": "x.example.com", "secret_id": ""},
-        {"name": "x", "domain": "x.example.com", "secret_id": "s", "manual_secret_ids": {"AFP_X": "s"}},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "secret_ids": {"AFP_X": "s"}},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "env": {"AFP_X": "v"}},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "env": {"lower": "v"}},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "env": {"X": 1}},
+        {"name": "x", "domain": "x.example.com", "secret_id": "s", "env": {"X": "v"}, "secret_ids": {"X": "s"}},
         {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": 0},
         {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": 65536},
         {"name": "x", "domain": "x.example.com", "secret_id": "s", "port": "8080"},
