@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -225,6 +226,8 @@ def test_pack_platform_takes_what_the_vm_uses(tmp_path: Path) -> None:
         assert tar.getmember("bin/afp").mode == 0o755 and tar.getmember("afp/cli.py").mode == 0o644
     assert rm_values.pack_platform(root, tmp_path / "b.tar.gz") == first
     assert (tmp_path / "a.tar.gz").read_bytes() == (tmp_path / "b.tar.gz").read_bytes()
+    # The same id as afp-bootstrap's: sha256sum of the archive, 12 digits.
+    assert first == hashlib.sha256((tmp_path / "a.tar.gz").read_bytes()).hexdigest()[:12]
     (root / "bin" / "afp").chmod(0o644)  # the executable bit counts
     assert rm_values.pack_platform(root, tmp_path / "c.tar.gz") != first
 

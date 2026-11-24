@@ -24,7 +24,8 @@ Subcommands:
                              print the hash of its contents (12 hex digits).
   pack-platform ROOT OUT     Pack the platform code that the VM and the DevOps
                              build use (PLATFORM_DIRS of ROOT) into OUT, a
-                             tar.gz; print its hash (12 hex digits).
+                             tar.gz; print the archive's sha256 (12 hex digits),
+                             as afp-bootstrap names it on the VM.
 """
 
 from __future__ import annotations
@@ -201,7 +202,9 @@ def pack_platform(root: Path, out: Path) -> str:
                 info.mtime = 0
                 tar.addfile(info, io.BytesIO(data))
     out.write_bytes(buf.getvalue())
-    return _content_hash(entries)
+    # The hash of the archive itself, which afp-bootstrap names the VM's copy
+    # after (the archive is the same bytes for the same files).
+    return hashlib.sha256(buf.getvalue()).hexdigest()[:12]
 
 
 def _load_json(path: str) -> dict[str, Any]:
