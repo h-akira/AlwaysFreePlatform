@@ -45,7 +45,8 @@ def test_values_go_through_the_environment(tmp_path: Path) -> None:
         "SIGNING_KEY": SIGNING_KEY,
         "API_KEY": API_KEY,  # quotes and $ pass as they are; no env file to escape
     }
-    assert "--no-build" in up["args"] and "--wait" in up["args"]
+    # Started without waiting for health checks (ADR 036).
+    assert "--no-build" in up["args"] and not any(a.startswith("--wait") for a in up["args"])
     for call in world.calls:
         joined = " ".join(call["args"])
         assert DB_PASSWORD not in joined and API_KEY not in joined and SIGNING_KEY not in joined
@@ -64,23 +65,29 @@ def test_second_deploy_keeps_the_previous(tmp_path: Path) -> None:
     assert world.state("hello") == {"current": "v2", "previous": "v1"}
 
 
-def test_broken_deploy_goes_back(tmp_path: Path) -> None:
+def test_failed_deploy_is_not_rolled_back(tmp_path: Path) -> None:
     world = World()
     deploy(world, tmp_path, "hello", "v1")
     world.broken.add("v2")
-    with pytest.raises(AfpError, match=r"deploy of hello v2 failed: .*unhealthy.* -- back on v1"):
+    with pytest.raises(AfpError, match=r"deploy of hello v2 failed: .*failed to start.* -- not rolled back"):
         deploy(world, tmp_path, "hello", "v2")
+    # v2 is left as it is (nothing rolled back) and recorded, so that the
+    # state matches what runs and make rollback goes back to v1.
+    assert world.running == {"hello": "v2"}
+    assert world.state("hello") == {"current": "v2", "previous": "v1"}
+    assert any(k.startswith("dumps/hello/") and k.endswith("-before-v2.sql.gz") for k in world.objects)
+    summary = cli.cmd_rollback(make_ctx(tmp_path, world), argparse.Namespace(project="hello"))
+    assert summary.startswith("hello is now v1 (previous: v2)")
     assert world.running == {"hello": "v1"}
-    assert world.state("hello") == {"current": "v1", "previous": None}
 
 
-def test_broken_first_deploy_stops(tmp_path: Path) -> None:
+def test_failed_first_deploy_is_left_as_it_is(tmp_path: Path) -> None:
     world = World()
     world.broken.add("v1")
-    with pytest.raises(AfpError, match="stopped \\(no previous version\\)"):
+    with pytest.raises(AfpError, match="not rolled back"):
         deploy(world, tmp_path, "hello", "v1")
-    assert world.running == {}
-    assert world.state("hello") is None
+    assert world.running == {"hello": "v1"}
+    assert world.state("hello") == {"current": "v1", "previous": None}
 
 
 def test_missing_release_changes_nothing(tmp_path: Path) -> None:

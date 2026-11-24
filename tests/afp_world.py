@@ -1,7 +1,7 @@
 """A fake VM for afp tests: answers the oci and docker commands afp runs.
 
 It keeps a bucket (objects), the secrets, and which tag of which compose
-project is running. Tags in `broken` never become healthy.
+project is running. Tags in `broken` fail to start.
 """
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ class World:
                 tag = env["AFP_TAG"]
                 self.running[project] = tag
                 if tag in self.broken:
-                    return 1, "", f"container {project}-web-1 is unhealthy"
+                    return 1, "", f"container {project}-web-1 failed to start"
                 return 0, "", ""
             if "down" in args:
                 self.running.pop(project, None)

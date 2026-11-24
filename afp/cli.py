@@ -167,8 +167,8 @@ COMMANDS = {
     ),
     "deploy": Command(
         cmd_deploy,
-        "dump the DB, then run TAG of PROJECT (released by make deploy) and wait until healthy; "
-        "on failure go back to the version before",
+        "dump the DB, then start TAG of PROJECT (released by make deploy); "
+        "a failure is reported, not rolled back",
         upload_log=True,
         arguments=(("project", None), ("tag", None)),
     ),

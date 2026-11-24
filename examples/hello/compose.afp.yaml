@@ -11,8 +11,9 @@ services:
       AFP_DB_USER: ${AFP_DB_USER}
       AFP_DB_PASSWORD: ${AFP_DB_PASSWORD}
       HELLO_VERSION: ${AFP_TAG}
+    # Optional: the platform does not wait for it or look at it (ADR 036);
+    # docker shows the status. The slim image has no wget or curl.
     healthcheck:
-      # The slim image has no wget or curl.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
       interval: 10s
       timeout: 5s

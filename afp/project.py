@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 
 # Docker tag syntax.
 TAG = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
-WAIT_TIMEOUT = 300  # seconds for every service to become healthy
 CADDY_PROJECT = "afp-caddy"
 # Build cache older than this is removed after each build on the VM.
 BUILD_CACHE_KEEP = "168h"
@@ -212,14 +211,14 @@ class Projects:
         return args + (["-f", str(path)] if path is not None else [])
 
     def up(self, p: Project, tag: str, secrets: dict[str, str]) -> None:
-        """Pull and start tag; fail unless every service becomes healthy."""
+        """Pull and start tag (docker compose up -d). Health checks are not
+        waited for: the platform does not look at them (ADR 036)."""
         path = self.fetch_release(p, tag)
         env = compose_env(self.cfg, p, tag, secrets)
         self.login()
         self.ctx.runner.run([*self._compose(p, path), "pull", "-q"], env=env)
         self.ctx.runner.run(
-            [*self._compose(p, path), "up", "-d", "--no-build", "--remove-orphans",
-             "--wait", "--wait-timeout", str(WAIT_TIMEOUT)],
+            [*self._compose(p, path), "up", "-d", "--no-build", "--remove-orphans"],
             env=env,
         )
 
@@ -304,7 +303,10 @@ class Projects:
 
     def deploy(self, p: Project, tag: str, build: bool = True) -> str:
         """Deploy tag. With build, a release that has the tag's source is built
-        first; a failed build changes nothing on the VM."""
+        first; a failed build changes nothing on the VM. The state records tag
+        before it is started, so that it always matches what runs: when the
+        containers cannot be started, the failure is reported, nothing is
+        rolled back, and make rollback goes back to the version before (ADR 036)."""
         check_tag(tag)
         state = self.read_state(p)
         self.fetch_release(p, tag)  # fail before anything else if it is missing
@@ -314,23 +316,12 @@ class Projects:
             if archive is not None:
                 self.build(p, tag, archive, secrets)
         dump = self.dump(p, f"-before-{tag}")
+        new = next_state(state, tag)
+        self.write_state(p, new)
         try:
             self.up(p, tag, secrets)
         except AfpError as e:
-            current = state["current"]
-            if current:
-                self.ctx.log.info(f"{tag} failed; going back to {current}")
-                try:
-                    self.up(p, current, secrets)
-                    after = f"back on {current}"
-                except AfpError as e2:
-                    after = f"going back to {current} failed too: {e2}"
-            else:
-                self.down(p.name)
-                after = "stopped (no previous version)"
-            raise AfpError(f"deploy of {p.name} {tag} failed: {e} -- {after}") from e
-        new = next_state(state, tag)
-        self.write_state(p, new)
+            raise AfpError(f"deploy of {p.name} {tag} failed: {e} -- not rolled back") from e
         return f"{p.name} is now {tag} (previous: {new['previous'] or 'none'}); dump before it: {dump}"
 
     def rollback(self, p: Project) -> str:
