@@ -8,9 +8,10 @@
 #
 # Environment:
 #   AFP_CONFIG_DIR   Directory holding terraform.tfvars.json (required).
-#   AFP_SSH_KEY      Private key whose public half is ssh_public_key in
-#                    terraform.tfvars.json (default ~/.ssh/afp_ed25519).
-#                    The Bastion session uses the same key.
+#   AFP_SSH_KEY      Optional private key for the VM (opc), whose public half is
+#                    ssh_public_key in terraform.tfvars.json. Without it, ssh
+#                    uses your own settings (ssh-agent, ~/.ssh/config, ...).
+#   The Bastion session uses a throwaway key pair made here, like db-tunnel.sh.
 #   AFP_SESSION_TTL  Session lifetime in seconds (default 3600).
 set -euo pipefail
 
@@ -26,10 +27,12 @@ TFVARS="$AFP_CONFIG_DIR/terraform.tfvars.json"
 [[ -f "$TFVARS" ]] || die "$TFVARS not found"
 REGION="$("${PY[@]}" get "$TFVARS" region)"
 
-PRIVATE_KEY="${AFP_SSH_KEY:-$HOME/.ssh/afp_ed25519}"
-PUBLIC_KEY="$PRIVATE_KEY.pub"
 SESSION_TTL="${AFP_SESSION_TTL:-3600}"
-[[ -f "$PRIVATE_KEY" && -f "$PUBLIC_KEY" ]] || die "ssh key pair not found: $PRIVATE_KEY(.pub)"
+vm_key=()
+if [[ -n "${AFP_SSH_KEY:-}" ]]; then
+  [[ -f "$AFP_SSH_KEY" ]] || die "AFP_SSH_KEY not found: $AFP_SSH_KEY"
+  vm_key=(-i "$AFP_SSH_KEY")
+fi
 oci_() { oci --region "$REGION" "$@"; }
 if [[ $# -eq 0 && -n "${AFP_SSH_COMMAND:-}" ]]; then
   set -- "$AFP_SSH_COMMAND"
@@ -46,12 +49,13 @@ load_outputs
 BASTION_ID="$(out bastion_id)"
 VM_IP="$(out vm_private_ip)"
 
-bastion_create_session "$BASTION_ID" session-afp-vm-ssh "$VM_IP" 22 "$PUBLIC_KEY" "$SESSION_TTL"
+# The Bastion hop needs a key only for this session.
+BASTION_KEY="$tmp/bastion_ed25519"
+ssh-keygen -q -t ed25519 -N "" -C "afp-vm-ssh" -f "$BASTION_KEY"
+bastion_create_session "$BASTION_ID" session-afp-vm-ssh "$VM_IP" 22 "$BASTION_KEY.pub" "$SESSION_TTL"
 
 # The VM's host key changes whenever it is recreated; the path to it is
 # already authenticated by the Bastion, so a throwaway known_hosts is used.
-ssh_opts=(-i "$PRIVATE_KEY" -o IdentitiesOnly=yes -o ServerAliveInterval=60
-  -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$tmp/known_hosts")
-ssh "${ssh_opts[@]}" \
-  -o ProxyCommand="ssh ${ssh_opts[*]} -W %h:%p $(bastion_host)" \
-  "opc@$VM_IP" "$@"
+common=(-o ServerAliveInterval=60 -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$tmp/known_hosts")
+proxy="ssh -i $BASTION_KEY -o IdentitiesOnly=yes ${common[*]} -W %h:%p $(bastion_host)"
+ssh ${vm_key[@]+"${vm_key[@]}"} "${common[@]}" -o ProxyCommand="$proxy" "opc@$VM_IP" "$@"
