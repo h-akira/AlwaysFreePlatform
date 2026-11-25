@@ -2,7 +2,7 @@
 
 OCI のネットワーク・ロードバランサー（NLB）。L4（TCP・UDP）で通信を受け、そのまま後ろのサーバ（バックエンド）へ渡す。TLS を解かない。
 
-- **確かめた日**: 2026-11-25（Oracle の公式文書、Terraform の OCI プロバイダの文書、このテナンシの上限の読み取り）
+- **確かめた日**: 2026-11-25（Oracle の公式文書、Terraform の OCI プロバイダの文書、このテナンシの上限の読み取り）。§4 は 2026-11-25（実測）
 
 ## 1. 要点
 
@@ -27,9 +27,19 @@ OCI のネットワーク・ロードバランサー（NLB）。L4（TCP・UDP�
 - バックエンド・セットの `is_preserve_source`。有効にすると、バックエンドには利用者の IP のまま届く（「Backend servers see the original source IP.」）。**既定で有効**。
 - 有効のときは、IP アドレスで指定したバックエンドを足せない（インスタンスの OCID で指定する）。
 - 有効のときは、PROXY プロトコル（v2）を併せて使えない。
-- 有効のとき、バックエンドのセキュリティの規則に何を許すべきか、バックエンドの返事がどう利用者に返るかは、公式文書に書かれていない（未確認）。
+- 有効のとき、バックエンドのセキュリティの規則に何を許すべきか、バックエンドの返事がどう利用者に返るかは、公式文書に書かれていない（§4 の実測を参照）。
 
-## 4. 出典
+## 4. 実測
+
+次の構成で確かめた: 公開の NLB をパブリック・サブネットに置き、TCP の 80 番と 443 番のリスナーで、プライベート・サブネットの VM（公開 IP なし。経路は `0.0.0.0/0` を NAT ゲートウェイへ）の同じ番号へ通す。送信元 IP を保持し、ヘルスチェックは TCP。
+
+- VM の返事は、NAT ゲートウェイの経路に取られず、利用者に返った（HTTPS で 200、HTTP で 308）。
+- VM の中（Docker のコンテナ）に届いた接続の送信元は、利用者の IP のままだった。
+- ヘルスチェックの送信元は、NLB のあるパブリック・サブネットの中の IP だった。
+- NLB のサブネットのセキュリティ・リストで 443 番の送信元を絞ると、絞った範囲の外（VM から NAT ゲートウェイを通って NLB の公開 IP へ）からは接続できなかった。80 番（全体に開けたもの）は通った。
+- `terraform apply` で、NLB・バックエンド・セット 2 つ・バックエンド 2 つ・リスナー 2 つを 1 つずつ順に作ると、どれも 2〜21 秒で作れた。
+
+## 5. 出典
 
 - [Network Load Balancer Overview](https://docs.oracle.com/en-us/iaas/Content/NetworkLoadBalancer/overview.htm)（働き・料金・帯域）
 - [Creating a Network Load Balancer](https://docs.oracle.com/en-us/iaas/Content/NetworkLoadBalancer/NetworkLoadBalancers/create-network-load-balancer.htm)（公開 IP・NSG・リスナーとセキュリティの規則）

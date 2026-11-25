@@ -2,7 +2,7 @@
 
 外から直接届かない資源（プライベート・サブネットの VM や DB）に、手元から一時的に入るための OCI のサービス。踏み台のサーバを自分で立てる代わりに、OCI が用意する踏み台を使う。
 
-- **確かめた日**: 2026-11-09（Oracle の公式文書と、実際にポート転送で MySQL に入った結果）。§4 は 2026-11-13（VM に ssh で入った結果）。§5 は 2026-11-25（公式文書）
+- **確かめた日**: 2026-11-09（Oracle の公式文書と、実際にポート転送で MySQL に入った結果）。§4 は 2026-11-13（VM に ssh で入った結果）。§5 は 2026-11-25（公式文書と、実際に Managed SSH で VM に入った結果）
 
 ## 1. 要点
 
@@ -52,7 +52,7 @@ sequenceDiagram
 
 ## 5. Managed SSH のセッションで VM に入る
 
-公式文書で確かめたこと（実際に入れるかは、まだ確かめていない）:
+公式文書で確かめたこと:
 
 - 対象の VM の Oracle Cloud Agent の **Bastion のプラグイン** を有効にする。既定では無効（「The Bastion plugin is not enabled by default and must be enabled before creating a session.」）。プラグインの有効・無効は、効くまで最大 10 分。
 - VM は Linux の公式イメージで、OpenSSH のサーバが動いていること。
@@ -61,6 +61,12 @@ sequenceDiagram
 - セッションを作るときに、VM の OS のユーザ名（公式のイメージでは `opc`）と ssh の公開鍵を渡す。接続するときは、対の秘密鍵を使う。VM に前もって公開鍵を置く必要は、公式文書に書かれていない。
 - 使う人には、Bastion とセッションを扱う権限に加え、インスタンスと、そのエージェントのプラグインを読む権限（`read instance-agent-plugins`）が要る。
 - CLI では `oci bastion session create-managed-ssh --target-resource-id <VM の OCID> --target-os-username opc ...`。
+
+実測（Oracle Linux 9・A1 の VM。作るときに Bastion のプラグインを有効にした。VM はプライベート・サブネットにあり、NAT ゲートウェイとサービス・ゲートウェイがある）:
+
+- VM に前もって公開鍵を置かずに、セッションに渡した鍵だけで入れた。
+- Bastion の手前と VM の両方に同じ鍵を使い、`ssh -o ProxyCommand="ssh -W %h:%p <セッション>@host.bastion.<リージョン>.oci.oraclecloud.com" opc@<VM の IP>` の形で入れた。
+- VM を作って約 10 分後の 1 回目は、セッションを作ってから入れるまで約 8 分かかった。2 回目は約 1 分 40 秒だった。
 
 ## 6. 出典
 
