@@ -28,24 +28,36 @@ flowchart TB
   push --> gh["GitHub"] --> devops["OCI DevOps<br/>リリース一式を置く"]
   devops -->|"エージェントに afp deploy を実行させる"| afp
   afp -->|"ビルドして push"| reg[("OCIR<br/>イメージ")]
-  user["ブラウザ"] -->|"HTTPS<br/>app-a.example.com<br/>app-b.example.net"| caddy
+  user["ブラウザ"] -->|"HTTPS<br/>app-a.example.com<br/>app-b.example.com"| nlb
   subgraph vcn["VCN"]
     subgraph pub["パブリック・サブネット"]
+      nlb["NLB<br/>TCP 80・443 を素通し"]
+    end
+    subgraph vmnet["VM 用サブネット（プライベート）"]
       subgraph vm["VM（ステートレス）"]
         afp["afp"]
-        caddy["Caddy<br/>入口・証明書"]
+        caddy["Caddy<br/>証明書・振り分け"]
         a["プロジェクト A"]
         b["プロジェクト B"]
         caddy --> a & b
       end
     end
-    subgraph priv["プライベート・サブネット"]
+    subgraph dbnet["DB 用サブネット（プライベート）"]
       mysql[("MySQL HeatWave<br/>プロジェクトごとに DB とユーザ")]
     end
+    subgraph bnet["Bastion 用サブネット（プライベート）"]
+      bep["Bastion の口"]
+    end
+    nat["NAT ゲートウェイ<br/>外へ出るだけ"]
+    sgw["サービス・ゲートウェイ<br/>OCI のサービスへ"]
   end
+  nlb --> caddy
   a & b --> mysql
+  vm --> nat & sgw
   reg -. pull .-> vm
-  bastion["OCI Bastion"] -. "保守のときだけ" .-> mysql
+  bastion["OCI Bastion"] -. "保守のときだけ" .-> bep
+  bep -. "ssh" .-> vm
+  bep -. "MySQL" .-> mysql
   vault["OCI Vault"] -. "シークレット" .-> afp
   os[("Object Storage<br/>一覧・今の版・ダンプ")] -. "読み書き" .-> afp
   afp -. "基盤のヘルスチェック（1 時間ごと）" .-> mysql
@@ -58,7 +70,8 @@ flowchart TB
 |---|---|
 | **VM**（OCI Compute） | プロジェクトのコンテナと Caddy を Docker で動かす。`release` ブランチへの push からのデプロイでは、イメージもここでビルドする |
 | **Caddy** | 入口。HTTPS を受け、ドメイン名でプロジェクトに振り分ける。証明書（Let's Encrypt）を自動で取得・更新する |
-| **OCI DNS** | 基盤の公開 DNS のゾーン。プロジェクトごとの名前（`<プロジェクト>.<ゾーン>`）を、その VM の公開 IP に向ける（§5.4） |
+| **NLB**（OCI の Network Load Balancer） | 外からの入口。公開 IP を持ち、TCP の 80 番と 443 番を、そのまま（TLS を解かずに）VM の Caddy へ通す。利用者の IP を書き換えない（§5.4） |
+| **OCI DNS** | 基盤の公開 DNS のゾーン。プロジェクトごとの名前（`<プロジェクト>.<ゾーン>`）を、その VM の前の NLB の公開 IP に向ける（§5.4） |
 | **`afp`** | 基盤のコマンド（Python の標準ライブラリだけで書く。§5.8）。VM の上で、初期設定・プロジェクトの一覧に合わせた同期（プロジェクトの DB とユーザの作成を含む）・デプロイ・バックアップ・基盤のヘルスチェックを受け持つ。外からは、VM の中のエージェント（Oracle Cloud Agent の Run Command）を通して呼ぶ（§5.6） |
 | **MySQL HeatWave** | 全プロジェクトで共有する DB。プロジェクトごとにデータベースとユーザを分ける |
 | **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る）。外から持ってくる秘密の値（GitHub のトークン・外部の API キー）は、管理者が手で作る（§5.5） |
@@ -66,7 +79,8 @@ flowchart TB
 | **OCIR**（OCI のコンテナ・レジストリ。[references/oci-registry.md](references/oci-registry.md)） | ビルドしたイメージ。リポジトリはプロジェクトのサービスごと |
 | **OCI DevOps** | リポジトリを伝えたプロジェクトの `release` ブランチへの push を受けて、そのプロジェクトのリリース一式を Object Storage に置き、VM に `afp deploy` を実行させる（§5.6） |
 | **OCI Monitoring・Notifications** | 基盤のヘルスチェック（§5.7）の結果を受け、失敗したり届かなくなったりしたらメールで知らせる |
-| **OCI Bastion** | 手元からプライベート・サブネットの DB に入るための、一時的な入口（§5.9） |
+| **VCN** | 基盤のネットワーク。サブネットを役目ごとに 4 つに分ける（§5.4） |
+| **OCI Bastion** | 手元からプライベート・サブネットの VM と DB に入るための、一時的な入口（§5.9） |
 | **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものを作る。プロジェクトの一覧から、プロジェクトごとの生成するシークレットとパイプラインも作る。手元の `terraform/` を、そのまま（git に頼らず）送って実行する |
 
 - **VM の外は Terraform、VM の中は `afp`** が受け持つ。`afp` は Terraform が書いたプロジェクトの一覧に従う。
@@ -77,7 +91,7 @@ flowchart TB
 - OCIR へのログインは、手元も VM も、使うたびに OCI の資格から短い期限のトークンを取って行う。auth token は使わない。
 - Terraform のスタックは 2 つ。中はどちらもモジュールで分ける。
   - **base**: Terraform の destroy で消せないもの（コンパートメント・Vault・Vault の鍵）と、作り直すと OCI の外の設定を直す要が出るもの（公開 DNS のゾーン。親のゾーンが NS レコードで委任する）だけ。
-  - **本体**: それ以外のすべて（ネットワーク・Bastion・HeatWave・シークレット・バケット・予約済みの IP・DNS のレコードなど）。本体の destroy の前に、バケットを空にする。
+  - **本体**: それ以外のすべて（ネットワーク・NLB・Bastion・HeatWave・シークレット・バケット・DNS のレコードなど）。本体の destroy の前に、バケットを空にする。
   - 本体は、base の資源を名前で探す。スタックの間で値を受け渡す仕組みは作らない。
   - 本体のシークレットの名前には、作るたびに変わる接尾辞を付ける。
 - **基盤の開発中は、削除を防ぐ仕組みを一切付けない**（Terraform の `prevent_destroy`・HeatWave の削除防止・コンパートメントを消せなくする設定）。
@@ -108,7 +122,7 @@ sequenceDiagram
   participant T as Terraform
   participant V as 新しい VM
   participant S as Object Storage・Vault・OCIR
-  T->>V: 作る（予約済みの IP を付け替える）
+  T->>V: 作る（NLB の行き先を新しい VM にする）
   V->>V: cloud-init: Docker と基盤のコードを入れる
   V->>S: プロジェクトの一覧と各プロジェクトの今の版を読む
   loop プロジェクトごと
@@ -118,7 +132,7 @@ sequenceDiagram
   V->>V: Caddy が証明書を取り直す
 ```
 
-- IP は予約済みのものを付け替えるので、VM だけを作り直したときは DNS は変わらない。本体のスタックを作り直して IP が変わったときも、本体が DNS のレコードを新しい IP に向ける（§5.4）。予約済みの公開 IP は無料とされている（[references/oci-free-tier.md](references/oci-free-tier.md) §2）。
+- 外から見える IP は NLB のものなので、VM だけを作り直したときは DNS は変わらない。本体のスタックを作り直して NLB の IP が変わったときも、本体が DNS のレコードを新しい IP に向ける（§5.4）。
 
 ## 5. 主な決定
 
@@ -141,13 +155,19 @@ sequenceDiagram
 - HeatWave の Always Free は保守のたびに最新の版へ上がるので、手元の版を追いかける。バックアップは 1 日分しかないので、基盤が毎日ダンプを取る。
 - 基盤が定期的に触る（§5.7 のヘルスチェック）。
 
-### 5.4 入口
+### 5.4 入口とネットワーク
 
+- VCN のサブネットを、役目ごとに 4 つに分ける。
+  - **パブリック**: NLB だけを置く。外から入れるのはここだけ。
+  - **VM 用**（プライベート）: VM。公開 IP を持たない。外へは NAT ゲートウェイ（外へ出るだけの出口）から、OCI のサービスへはサービス・ゲートウェイ（インターネットを通らない出口）から出る。
+  - **DB 用**（プライベート）: MySQL HeatWave。VM と Bastion の口からの MySQL だけを受ける。
+  - **Bastion 用**（プライベート）: Bastion の口（§5.9）。VM の ssh と DB の MySQL にだけ出られる。
+- 入口は、VM ごとに 1 つの NLB（L4）。TCP の 80 番と 443 番を VM の同じ番号へ通す。TLS は解かず、利用者の IP を保持したまま渡す。NLB は Always Free に入っている（[references/oci-network-load-balancer.md](references/oci-network-load-balancer.md)）。
 - Caddy を 1 つ置き、ドメイン名（TLS の SNI と HTTP の Host ヘッダ）でプロジェクトに振り分ける。パスでは分けない。
 - 基盤が公開 DNS のゾーンを 1 つ持つ（OCI DNS）。プロジェクトのドメインは `<プロジェクトの名前>.<ゾーン>` に決まる。ゾーンの外のドメインは扱わない。
-- 本体のスタックが、プロジェクトごとに A レコードを作り、そのプロジェクトの VM の公開 IP に向ける。親のゾーンからの委任（NS レコード）は、管理者が最初に一度だけ行う。
+- 本体のスタックが、プロジェクトごとに A レコードを作り、そのプロジェクトの VM の前の NLB の公開 IP に向ける。NLB の IP は予約しない（NLB を作り直さない限り変わらず、変わればレコードも本体が直す）。親のゾーンからの委任（NS レコード）は、管理者が最初に一度だけ行う。
 - DNS の問い合わせには料金がかかる（Always Free に入っていない。ゾーンそのものは無料）。
-- **80 番は常に全体に開ける**。443 番は、全体に開けるか、決めた IP からだけにするかを切り替えられる。
+- **80 番は常に全体に開ける**。443 番は、全体に開けるか、決めた IP からだけにするかを切り替えられる。絞るのは入口（パブリック・サブネット）で、VM は NLB を通ったものだけを受ける。
 
 ### 5.5 シークレット
 
@@ -201,8 +221,9 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 
 ### 5.9 手元からの保守
 
-- 手元から DB に入るときは、OCI Bastion のポート転送を使う（[references/oci-bastion.md](references/oci-bastion.md)）。
-- 手元から VM に ssh で入るのは保守のときだけで、これも Bastion のポート転送を使う。22 番は外に開けない。
+- Bastion の口は、Bastion 用のサブネットに置く（§5.4）。
+- 手元から DB に入るときは、OCI Bastion のポート転送を使う（[references/oci-bastion.md](references/oci-bastion.md)）。セッションの鍵は、そのたびに作って捨てる。
+- 手元から VM に ssh で入るのは保守のときだけで、Bastion の Managed SSH のセッションを使う。鍵はそのたびに作って捨て、VM に固定の鍵を置かない。22 番は外に開けない。
 
 ### 5.10 作らないもの
 

@@ -9,7 +9,7 @@ variable "region" {
 }
 
 variable "home_cidrs" {
-  description = "CIDR blocks allowed to connect to the Bastion (the administrator's networks), e.g. [\"192.0.2.10/32\"]."
+  description = "CIDR blocks of the administrator's networks, e.g. [\"192.0.2.10/32\"]. Allowed to connect to the Bastion, and to port 443 unless https_public."
   type        = list(string)
 
   validation {
@@ -31,9 +31,21 @@ variable "availability_domain_index" {
 }
 
 variable "vcn_cidr" {
-  description = "CIDR block of the VCN. Must contain db_subnet_cidr and vm_subnet_cidr."
+  description = "CIDR block of the VCN. Must contain the four subnets below."
   type        = string
   default     = "10.0.0.0/16"
+}
+
+variable "public_subnet_cidr" {
+  description = "CIDR block of the public subnet for the network load balancer."
+  type        = string
+  default     = "10.0.2.0/24"
+}
+
+variable "vm_subnet_cidr" {
+  description = "CIDR block of the private subnet for the VM."
+  type        = string
+  default     = "10.0.0.0/24"
 }
 
 variable "db_subnet_cidr" {
@@ -42,26 +54,16 @@ variable "db_subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-variable "vm_subnet_cidr" {
-  description = "CIDR block of the public subnet for the VM. Must be inside vcn_cidr."
+variable "bastion_subnet_cidr" {
+  description = "CIDR block of the private subnet for the Bastion's endpoint."
   type        = string
-  default     = "10.0.0.0/24"
+  default     = "10.0.3.0/24"
 }
 
 variable "https_public" {
-  description = "Open port 443 to everyone (true) or only to home_cidrs (false). Port 80 is always open."
+  description = "Open port 443 of the load balancer to everyone (true) or only to home_cidrs (false). Port 80 is always open."
   type        = bool
   default     = false
-}
-
-variable "ssh_public_key" {
-  description = "OpenSSH public key for user opc on the VM, used for maintenance through the Bastion (make ssh)."
-  type        = string
-
-  validation {
-    condition     = can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+) ", var.ssh_public_key))
-    error_message = "ssh_public_key must be one OpenSSH public key line."
-  }
 }
 
 variable "vm_shape" {
@@ -192,6 +194,6 @@ variable "github_token_secret_id" {
 }
 
 variable "dns_zone" {
-  description = "Public DNS zone of the platform, created by the base stack (the same value as there). make apply points <name>.<dns_zone> of each project at the VM."
+  description = "Public DNS zone of the platform, created by the base stack (the same value as there). make apply points <name>.<dns_zone> of each project at the load balancer in front of its VM."
   type        = string
 }

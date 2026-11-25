@@ -2,7 +2,7 @@
 
 外から直接届かない資源（プライベート・サブネットの VM や DB）に、手元から一時的に入るための OCI のサービス。踏み台のサーバを自分で立てる代わりに、OCI が用意する踏み台を使う。
 
-- **確かめた日**: 2026-11-09（Oracle の公式文書と、実際にポート転送で MySQL に入った結果）。§4 は 2026-11-13（VM に ssh で入った結果）
+- **確かめた日**: 2026-11-09（Oracle の公式文書と、実際にポート転送で MySQL に入った結果）。§4 は 2026-11-13（VM に ssh で入った結果）。§5 は 2026-11-25（公式文書）
 
 ## 1. 要点
 
@@ -50,7 +50,23 @@ sequenceDiagram
 - `ssh -L` で手元のポートを開く形のほか、`ssh -o ProxyCommand="ssh -W %h:%p <セッション>@host.bastion.<リージョン>.oci.oraclecloud.com" opc@<VM の IP>` の形（1 つのコマンドで入れる）も使えた（実測）。
 - セッションが `ACTIVE` になった直後は、数秒の間、鍵が断られた（`Permission denied (publickey)`）。15 秒ほど待つと通った（実測）。
 
-## 5. 出典
+## 5. Managed SSH のセッションで VM に入る
+
+公式文書で確かめたこと（実際に入れるかは、まだ確かめていない）:
+
+- 対象の VM の Oracle Cloud Agent の **Bastion のプラグイン** を有効にする。既定では無効（「The Bastion plugin is not enabled by default and must be enabled before creating a session.」）。プラグインの有効・無効は、効くまで最大 10 分。
+- VM は Linux の公式イメージで、OpenSSH のサーバが動いていること。
+- VCN に、ゲートウェイ（サービス・ゲートウェイ・インターネット・ゲートウェイ・NAT ゲートウェイのどれか）と、そこへの経路があること。
+- VM のサブネットのセキュリティ・リストで、Bastion の口の IP を含む範囲からの 22 番を許す。
+- セッションを作るときに、VM の OS のユーザ名（公式のイメージでは `opc`）と ssh の公開鍵を渡す。接続するときは、対の秘密鍵を使う。VM に前もって公開鍵を置く必要は、公式文書に書かれていない。
+- 使う人には、Bastion とセッションを扱う権限に加え、インスタンスと、そのエージェントのプラグインを読む権限（`read instance-agent-plugins`）が要る。
+- CLI では `oci bastion session create-managed-ssh --target-resource-id <VM の OCID> --target-os-username opc ...`。
+
+## 6. 出典
 
 - [Bastion Overview](https://docs.oracle.com/en-us/iaas/Content/Bastion/Concepts/bastionoverview.htm)（セッションの種類・許可リスト・料金）
 - [Creating an SSH Port Forwarding Session](https://docs.oracle.com/en-us/iaas/Content/Bastion/Tasks/create-session-port-forwarding.htm)（作り方・最長の時間）
+- [Creating a Managed SSH Session](https://docs.oracle.com/en-us/iaas/Content/Bastion/Tasks/create-session-managed-ssh.htm)（Managed SSH の前提）
+- [Connecting to a Managed SSH Session](https://docs.oracle.com/en-us/iaas/Content/Bastion/Tasks/connect-managed-ssh.htm)（セキュリティ・リストの規則）
+- [Managing Bastions](https://docs.oracle.com/en-us/iaas/Content/Bastion/Tasks/managingbastions.htm)（使う人の権限）
+- [Oracle Cloud Agent](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/manage-plugins.htm)（プラグインの有効化に要る時間）

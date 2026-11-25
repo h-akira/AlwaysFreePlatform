@@ -23,13 +23,33 @@ BASTION_SESSION_ID=""
 # Create a port-forwarding session and wait until it is ACTIVE.
 # Usage: bastion_create_session BASTION_ID NAME TARGET_IP TARGET_PORT PUBLIC_KEY_FILE TTL
 bastion_create_session() {
-  local bastion_id="$1" name="$2" ip="$3" port="$4" public_key="$5" ttl="$6" state=""
+  local bastion_id="$1" name="$2" ip="$3" port="$4" public_key="$5" ttl="$6"
   echo "Creating a Bastion session to ${ip}:${port} (TTL ${ttl}s) ..." >&2
   BASTION_SESSION_ID="$(oci_ bastion session create-port-forwarding \
     --bastion-id "$bastion_id" --display-name "$name" \
     --target-private-ip "$ip" --target-port "$port" \
     --ssh-public-key-file "$public_key" --key-type PUB --session-ttl "$ttl" \
     --query 'data.id' --raw-output)" || die "cannot create a Bastion session"
+  bastion_wait_active
+}
+
+# Create a managed SSH session to an instance (its Bastion plugin puts the
+# session's public key in for USER) and wait until it is ACTIVE.
+# Usage: bastion_create_managed_session BASTION_ID NAME INSTANCE_ID TARGET_IP USER PUBLIC_KEY_FILE TTL
+bastion_create_managed_session() {
+  local bastion_id="$1" name="$2" instance_id="$3" ip="$4" user="$5" public_key="$6" ttl="$7"
+  echo "Creating a Bastion managed SSH session to ${user}@${ip} (TTL ${ttl}s) ..." >&2
+  BASTION_SESSION_ID="$(oci_ bastion session create-managed-ssh \
+    --bastion-id "$bastion_id" --display-name "$name" \
+    --target-resource-id "$instance_id" --target-private-ip "$ip" --target-port 22 \
+    --target-os-username "$user" \
+    --ssh-public-key-file "$public_key" --key-type PUB --session-ttl "$ttl" \
+    --query 'data.id' --raw-output)" || die "cannot create a Bastion session"
+  bastion_wait_active
+}
+
+bastion_wait_active() {
+  local state=""
   for _ in $(seq 60); do
     state="$(oci_ bastion session get --session-id "$BASTION_SESSION_ID" \
       --query 'data."lifecycle-state"' --raw-output)"

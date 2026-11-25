@@ -91,13 +91,15 @@ module "secrets" {
 }
 
 module "network" {
-  source         = "../modules/network"
-  compartment_id = local.compartment_id
-  vcn_cidr       = var.vcn_cidr
-  db_subnet_cidr = var.db_subnet_cidr
-  vm_subnet_cidr = var.vm_subnet_cidr
-  home_cidrs     = var.home_cidrs
-  https_public   = var.https_public
+  source              = "../modules/network"
+  compartment_id      = local.compartment_id
+  vcn_cidr            = var.vcn_cidr
+  public_subnet_cidr  = var.public_subnet_cidr
+  vm_subnet_cidr      = var.vm_subnet_cidr
+  db_subnet_cidr      = var.db_subnet_cidr
+  bastion_subnet_cidr = var.bastion_subnet_cidr
+  home_cidrs          = var.home_cidrs
+  https_public        = var.https_public
 }
 
 module "database" {
@@ -168,7 +170,6 @@ module "vm" {
   shape                     = var.vm_shape
   ocpus                     = var.vm_ocpus
   memory_in_gbs             = var.vm_memory_in_gbs
-  ssh_public_key            = var.ssh_public_key
   generation                = var.vm_generation
   ready_after = [
     module.policies.dynamic_group_id,
@@ -177,7 +178,16 @@ module "vm" {
   ]
 }
 
-# Every project's name points at the VM it runs on (only "main" for now).
+module "nlb" {
+  source         = "../modules/nlb"
+  compartment_id = local.compartment_id
+  name           = "main"
+  subnet_id      = module.network.public_subnet_id
+  instance_id    = module.vm.instance_id
+}
+
+# Every project's name points at the load balancer in front of the VM it runs
+# on (only "main" for now).
 resource "oci_dns_rrset" "project" {
   for_each        = local.domains
   zone_name_or_id = data.oci_dns_zones.afp.zones[0].id
@@ -187,7 +197,7 @@ resource "oci_dns_rrset" "project" {
   items {
     domain = each.value
     rtype  = "A"
-    rdata  = module.vm.public_ip
+    rdata  = module.nlb.public_ip
     ttl    = 300
   }
 }

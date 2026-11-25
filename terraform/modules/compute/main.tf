@@ -32,10 +32,6 @@ variable "memory_in_gbs" {
   type = number
 }
 
-variable "ssh_public_key" {
-  type = string
-}
-
 # Bumping it replaces the VM.
 variable "generation" {
   type = number
@@ -121,7 +117,7 @@ resource "oci_core_instance" "vm" {
     subnet_id        = var.subnet_id
     display_name     = "vnic-afp-${var.name}"
     hostname_label   = var.name
-    assign_public_ip = false # the reserved IP below is attached instead
+    assign_public_ip = false # reached through the load balancer (ADR 040)
   }
 
   source_details {
@@ -130,9 +126,10 @@ resource "oci_core_instance" "vm" {
     boot_volume_size_in_gbs = 50
   }
 
+  # No ssh key: make ssh puts a throwaway one in through a Bastion managed SSH
+  # session (the Bastion plugin below; ADR 041).
   metadata = {
-    ssh_authorized_keys = var.ssh_public_key
-    user_data           = base64encode(local.user_data)
+    user_data = base64encode(local.user_data)
   }
 
   instance_options {
@@ -144,33 +141,20 @@ resource "oci_core_instance" "vm" {
       name          = "Compute Instance Run Command"
       desired_state = "ENABLED"
     }
+    plugins_config {
+      name          = "Bastion"
+      desired_state = "ENABLED"
+    }
   }
 
   lifecycle {
-    # A newer image, a new bootstrap or a new ssh key reach the VM only when
-    # it is recreated (bump vm_generation).
+    # A newer image or a new bootstrap reach the VM only when it is
+    # recreated (bump vm_generation).
     ignore_changes       = [source_details[0].source_id, metadata]
     replace_triggered_by = [terraform_data.generation]
   }
 
   depends_on = [terraform_data.ready]
-}
-
-data "oci_core_vnic_attachments" "vm" {
-  compartment_id = var.compartment_id
-  instance_id    = oci_core_instance.vm.id
-}
-
-data "oci_core_private_ips" "vm" {
-  vnic_id = data.oci_core_vnic_attachments.vm.vnic_attachments[0].vnic_id
-}
-
-# Kept across VM replacements, so DNS records need no change.
-resource "oci_core_public_ip" "vm" {
-  compartment_id = var.compartment_id
-  display_name   = "ip-afp-${var.name}"
-  lifetime       = "RESERVED"
-  private_ip_id  = data.oci_core_private_ips.vm.private_ips[0].id
 }
 
 output "instance_id" {
@@ -184,8 +168,4 @@ output "private_ip" {
 # CPU type that images must be built for.
 output "arch" {
   value = startswith(var.shape, "VM.Standard.A") ? "arm64" : "amd64"
-}
-
-output "public_ip" {
-  value = oci_core_public_ip.vm.ip_address
 }
