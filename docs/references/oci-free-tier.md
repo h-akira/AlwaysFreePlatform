@@ -10,11 +10,11 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 | 種類 | 内容 |
 |---|---|
 | Free Trial | 登録から 30 日間、一定額のクレジットで有料のサービスも試せる |
-| **Always Free** | 期限なく無料で使える資源。Free Trial が終わっても残る。有料（PAYG: 従量課金）のアカウントでも使える |
+| **Always Free** | 期限なく無料で使えるリソース。Free Trial が終わっても残る。有料（PAYG: 従量課金）のアカウントでも使える |
 
-## 2. Always Free の主な資源
+## 2. Always Free の主なリソース
 
-| 資源 | 枠 |
+| リソース | 枠 |
 |---|---|
 | Compute: Ampere A1（`VM.Standard.A1.Flex`、Arm） | 月 1,500 OCPU 時間・9,000 GB 時間 ＝ 常時 **合計 2 OCPU・12 GB**。1台にまとめても、分けてもよい |
 | Compute: E2.1.Micro（x86） | **2 台** まで。各 1/8 OCPU・1 GB |
@@ -37,7 +37,7 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
   - **OCIR**（コンテナ・レジストリ）: 「レジストリ自体は無料、保存は Object Storage の料金」とされるが、無料枠に含まれるかは公式に確かめられなかった。
   - **Artifact Registry**: 料金と無料枠を確かめていない。
 - **OCI DevOps は Always Free ではない**。パイプラインそのものは無料で、ビルドの実行の分だけ課金される。
-- **DNS**（公開のゾーン）: Always Free の資源の一覧に無い。価格の API では、問い合わせ 100 万回あたり 131.75 円（0.85 USD。品目 B88525）で、無料の回数は無い。ゾーンそのものの品目は無い（2026-11-23）。テナンシの上限（`oci limits value list --service-name dns`）は、ゾーン 1,000・レコード 25,000 だった（2026-11-23 実測。テナンシによって違いうる）。
+- **DNS**（公開のゾーン）: Always Free のリソースの一覧に無い。価格の API では、問い合わせ 100 万回あたり 131.75 円（0.85 USD。品目 B88525）で、無料の回数は無い。ゾーンそのものの品目は無い（2026-11-23）。テナンシの上限（`oci limits value list --service-name dns`）は、ゾーン 1,000・レコード 25,000 だった（2026-11-23 実測。テナンシによって違いうる）。
 - **予約済みの公開 IP**: Oracle の価格の API（§6）に品目が無い。予約済みの公開 IP を出したときの Oracle の発表では「料金はかからない」とされている（古い発表で、今の価格表の記述では確かめられなかった）。上限（`reserved-public-ip-count`）はリージョンあたり 50 だった（2026-11-13 実測。テナンシによって違いうる）。
 - **Network Load Balancer**: 公式文書の概要に「Network load balancers are Always Free tier.」とある。帯域の設定は無く、通信に合わせて広がる（「Capable of scaling beyond 8 Gbps.」）。価格の API に品目が無い。テナンシの上限（`max-nlb-flexible-count`）はリージョンあたり 10 だった（2026-11-25 実測。テナンシによって違いうる）。
 - **NAT ゲートウェイ・サービス・ゲートウェイ**: 価格の API に品目が無い。料金のページは読めず、無料かは公式の料金の記述で確かめていない（2026-11-25）。NAT ゲートウェイの上限（`nat-gateway-count`）は 1 だった（2026-11-25 実測）。

@@ -11,7 +11,7 @@
 - **ホームリージョン**: Compute と DB は、ホームリージョンにしか無料で作れない。
 - **アイドル回収**: Always Free の Compute は、7 日間使用率が低いと回収されうる。個人用のアプリはこれに当たりやすい。
 - **無料でないもの**:
-  - **OCI DevOps のビルド**。実行の分だけ課金される（額は未確認）。有料の資源を使うので、PAYG（従量課金）のアカウントが要る見込み（未確認）。
+  - **OCI DevOps のビルド**。実行の分だけ課金される（額は未確認）。有料のリソースを使うので、PAYG（従量課金）のアカウントが要る見込み（未確認）。
   - **OCIR の保存**。保存量に応じた料金になりうる。古いものを消して小さく保つ。
 
 ## 2. 全体の図
@@ -92,12 +92,12 @@ flowchart TB
 - Terraform のスタックは 2 つ。中はどちらもモジュールで分ける。
   - **base**: Terraform の destroy で消せないもの（コンパートメント・Vault・Vault の鍵）と、作り直すと OCI の外の設定を直す要が出るもの（公開 DNS のゾーン。親のゾーンが NS レコードで委任する）だけ。
   - **本体**: それ以外のすべて（ネットワーク・NLB・Bastion・HeatWave・シークレット・バケット・DNS のレコードなど）。本体の destroy の前に、バケットを空にする。
-  - 本体は、base の資源を名前で探す。スタックの間で値を受け渡す仕組みは作らない。
+  - 本体は、base のリソースを名前で探す。スタックの間で値を受け渡す仕組みは作らない。
   - 本体のシークレットの名前には、作るたびに変わる接尾辞を付ける。
 - **基盤の開発中は、削除を防ぐ仕組みを一切付けない**（Terraform の `prevent_destroy`・HeatWave の削除防止・コンパートメントを消せなくする設定）。
 - Terraform の state は Resource Manager が預かる。手元に state を置かない。
 - 環境ごとの値（プロジェクトの一覧・DNS のゾーン・通知のメールの宛先・OCID など）は、この公開リポジトリに置かず、別の非公開の設定に置く。
-- 基盤が作る OCI の資源の名前は `<種類>-afp-<識別子>` にする（例: `bucket-afp-main`・`subnet-afp-db`・`trigger-afp-<プロジェクト>`）。識別子は必ず付け、1 つしか無いものは `main`。OCIR のリポジトリは `repo-afp-<プロジェクト>/<サービス>`。名前に英数字しか使えない Bastion は、ハイフンを除く（`bastionafpmain`）。
+- 基盤が作る OCI のリソースの名前は `<種類>-afp-<識別子>` にする（例: `bucket-afp-main`・`subnet-afp-db`・`trigger-afp-<プロジェクト>`）。識別子は必ず付け、1 つしか無いものは `main`。OCIR のリポジトリは `repo-afp-<プロジェクト>/<サービス>`。名前に英数字しか使えない Bastion は、ハイフンを除く（`bastionafpmain`）。
 
 ## 4. 状態の置き場所
 
@@ -201,7 +201,7 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 | 通知の宛先（成否のメール） | イメージとリリース一式の置き場所 |
 | DevOps に与える OCI の権限 | — |
 
-- トリガーと webhook の Secret だけは Terraform で作らず、`make apply` の中で OCI CLI が作る・消す・絞りを直す（Terraform では webhook の Secret が得られないため）。`make apply` で設定どおりになり、`make destroy` で消えるのは、ほかの資源と同じ。
+- トリガーと webhook の Secret だけは Terraform で作らず、`make apply` の中で OCI CLI が作る・消す・絞りを直す（Terraform では webhook の Secret が得られないため）。`make apply` で設定どおりになり、`make destroy` で消えるのは、ほかのリソースと同じ。
 - GitHub の側の webhook は、パイプラインを作ったときに、管理者が GitHub の画面で登録する。URL は `make apply` が表示し、Secret は Vault からコピーする。
 - **パイプラインはプロジェクトごとに独立させる**。あるプロジェクトの push は、そのプロジェクトのパイプラインだけを動かす。
 - ビルドは、プロジェクトの間で並んで走ってもよい。
