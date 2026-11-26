@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 import re
 import urllib.request
@@ -114,6 +115,26 @@ class Oci:
                 ),
                 quiet=True,
             )
+
+    def post_metric(self, compartment_id: str, namespace: str, name: str, value: float, dimensions: dict[str, str]) -> None:
+        """Post one data point of a custom metric, stamped now.
+
+        PostMetricData has its own endpoint (telemetry-ingestion), which the
+        CLI does not pick by itself. ATOMIC: a data point that fails
+        validation fails the command instead of being reported in its output.
+        """
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        data = [{
+            "namespace": namespace, "compartmentId": compartment_id, "name": name, "dimensions": dimensions,
+            "datapoints": [{"timestamp": now, "value": value}],
+        }]
+        self.runner.run(
+            self._cmd(
+                "monitoring", "metric-data", "post", "--metric-data", json.dumps(data),
+                "--batch-atomicity", "ATOMIC",
+                "--endpoint", f"https://telemetry-ingestion.{self.region}.oraclecloud.com",
+            )
+        )
 
     def registry_token(self, registry: str) -> str:
         """Short-lived (1 hour) OCIR token for docker login -u BEARER_TOKEN."""

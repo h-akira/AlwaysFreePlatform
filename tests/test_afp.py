@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 from pathlib import Path
@@ -18,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 from afp import caddy, cli, config, db  # noqa: E402
 from afp.errors import AfpError  # noqa: E402
 from afp.lock import Lock  # noqa: E402
-from afp.log import truncate  # noqa: E402
+from afp.log import log_name, truncate  # noqa: E402
 from afp.oci import Oci  # noqa: E402
 
 from afp_world import ADMIN_PASSWORD, DB_PASSWORD, afp_json  # noqa: E402
@@ -289,6 +290,20 @@ def test_install_creates_the_network_once(tmp_path: Path) -> None:
     assert (tmp_path / "caddy").is_dir()
 
 
+def test_install_restarts_docker_only_when_daemon_json_changes(tmp_path: Path) -> None:
+    restart = ["systemctl", "restart", "docker.service", "afp-metadata-block.service"]
+    world = World()
+    cli.cmd_install(make_ctx(tmp_path, world), NO_ARGS)
+    calls = [c["args"] for c in world.calls]
+    assert restart in calls
+    assert "com.docker.compose.project" in (tmp_path / "docker" / "daemon.json").read_text()
+    assert (tmp_path / "systemd" / "afp-backup.timer").is_file()
+    assert ["systemctl", "enable", "--now", "afp-backup.timer"] in calls
+    world = World()
+    cli.cmd_install(make_ctx(tmp_path, world), NO_ARGS)
+    assert restart not in [c["args"] for c in world.calls]
+
+
 @pytest.fixture(autouse=True)
 def _restore_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # main() changes the directory; monkeypatch puts it back after each test.
@@ -334,9 +349,19 @@ def test_main_names_the_log_after_the_project(tmp_path: Path, capsys: pytest.Cap
     assert capsys.readouterr().out.splitlines()[-1].endswith("-backup-hello.log")
 
 
-def test_bucket_name_matches_terraform() -> None:
-    assert 'bucket_name = "bucket-afp-main"' in (ROOT / "terraform" / "main" / "main.tf").read_text()
-    assert config.BUCKET == "bucket-afp-main"
+def test_log_names_have_no_prefix() -> None:
+    # The logs bucket holds nothing else.
+    assert re.fullmatch(r"\d{8}T\d{6}Z-backup-hello\.log", log_name("backup", "hello"))
+    assert re.fullmatch(r"\d{8}T\d{6}Z-sync\.log", log_name("sync"))
+
+
+def test_bucket_names_match_terraform() -> None:
+    main_tf = (ROOT / "terraform" / "main" / "main.tf").read_text()
+    assert config.DEPLOY_BUCKET == "bucket-afp-deploy"
+    assert config.DUMPS_BUCKET == "bucket-afp-dumps"
+    assert config.LOGS_BUCKET == "bucket-afp-logs"
+    for key, name in [("deploy", config.DEPLOY_BUCKET), ("dumps", config.DUMPS_BUCKET), ("logs", config.LOGS_BUCKET)]:
+        assert re.search(rf'{key}_bucket_name\s*=\s*"{name}"', main_tf), key
 
 
 def test_main_uploads_the_log_with_the_real_runner(tmp_path: Path, capsys: pytest.CaptureFixture[str],
@@ -356,8 +381,8 @@ def test_main_uploads_the_log_with_the_real_runner(tmp_path: Path, capsys: pytes
     monkeypatch.setitem(cli.COMMANDS, "sync", cli.Command(work, "h", upload_log=True))
     assert cli.main(["sync"], paths=paths_in(tmp_path)) == 0
     out = capsys.readouterr().out
-    assert out.startswith("afp sync: OK: done\nlog: bucket bucket-afp-main: logs/")
-    assert "os object put -ns ns -bn bucket-afp-main --name logs/" in (tmp_path / "oci.log").read_text()
+    assert re.match(r"afp sync: OK: done\nlog: bucket bucket-afp-logs: \d{8}T\d{6}Z-sync\.log\n", out)
+    assert "os object put -ns ns -bn bucket-afp-logs --name " in (tmp_path / "oci.log").read_text()
     assert not list((tmp_path / "log").iterdir())  # removed once uploaded
 
 
@@ -387,7 +412,7 @@ def test_only_a_404_counts_as_missing(tmp_path: Path) -> None:
             return super()._answer(args, env, stdout_path)
 
     ctx = make_ctx(tmp_path, World())
-    assert ctx.oci is not None and ctx.oci.get_object_or_none("bucket-afp-main", "state/none.json") is None
+    assert ctx.oci is not None and ctx.oci.get_object_or_none("bucket-afp-deploy", "state/none.json") is None
     ctx = make_ctx(tmp_path, Denied())
     with pytest.raises(AfpError, match="cannot read state/x.json"):
-        ctx.oci.get_object_or_none("bucket-afp-main", "state/x.json")  # type: ignore[union-attr]
+        ctx.oci.get_object_or_none("bucket-afp-deploy", "state/x.json")  # type: ignore[union-attr]

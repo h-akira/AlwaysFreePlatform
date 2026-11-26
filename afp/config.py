@@ -1,4 +1,4 @@
-"""afp.json, written to the bucket by Terraform (terraform/main/main.tf).
+"""afp.json, written to the deploy bucket by Terraform (terraform/main/main.tf).
 
 Names are checked again here because they end up in SQL, the Caddyfile and
 docker compose project names.
@@ -13,8 +13,14 @@ from typing import Any
 
 from afp.errors import AfpError
 
-# Must match the bucket name in terraform/main/main.tf.
-BUCKET = "bucket-afp-main"
+# Must match the bucket names in terraform/main/main.tf (deploy also in
+# terraform/modules/compute/afp-bootstrap.sh).
+# afp.json, platform.tar.gz, releases/ and state/; nothing expires.
+DEPLOY_BUCKET = "bucket-afp-deploy"
+# DB dumps, <project>/<time>[-before-<tag>].sql.gz; deleted after 28 days.
+DUMPS_BUCKET = "bucket-afp-dumps"
+# Logs of afp runs, <time>-<command>[-<project>].log; deleted after 28 days.
+LOGS_BUCKET = "bucket-afp-logs"
 
 PROJECT_NAME = re.compile(r"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$")
 DOMAIN = re.compile(r"^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")

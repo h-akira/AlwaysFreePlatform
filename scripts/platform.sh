@@ -4,7 +4,7 @@
 # Usage: platform.sh
 #   1. Packs the code that the VM and the DevOps build use (afp/, bin/, caddy/,
 #      mysql/, scripts/) as it is on disk, committed or not, into
-#      platform.tar.gz and puts it into the bucket (replacing the one there).
+#      platform.tar.gz and puts it into the deploy bucket (replacing the one there).
 #   2. Runs afp-bootstrap on the VM through Run Command and waits for it: the
 #      VM takes platform.tar.gz, then runs afp install and afp sync.
 #   No git and no tags are involved; tags of the platform repository are only

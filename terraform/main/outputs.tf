@@ -32,8 +32,17 @@ output "key_id" {
   value = data.oci_kms_keys.afp.keys[0].id
 }
 
+# The deploy bucket (afp.json, platform.tar.gz, releases, state).
 output "bucket" {
-  value = module.storage.bucket_name
+  value = module.storage.deploy_bucket_name
+}
+
+output "dumps_bucket" {
+  value = module.storage.dumps_bucket_name
+}
+
+output "logs_bucket" {
+  value = module.storage.logs_bucket_name
 }
 
 output "namespace" {

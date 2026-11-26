@@ -20,8 +20,11 @@ data "oci_identity_compartments" "afp" {
 locals {
   compartment_id   = data.oci_identity_compartments.afp.compartments[0].id
   compartment_name = "compartment-afp-main"
-  # Also written in terraform/modules/compute/afp-bootstrap.sh.
-  bucket_name = "bucket-afp-main"
+  # Also written in afp/config.py; the deploy bucket also in
+  # terraform/modules/compute/afp-bootstrap.sh.
+  deploy_bucket_name = "bucket-afp-deploy"
+  dumps_bucket_name  = "bucket-afp-dumps"
+  logs_bucket_name   = "bucket-afp-logs"
   # Each project is served at <name>.<dns_zone>.
   domains = { for p in var.projects : p.name => "${p.name}.${var.dns_zone}" }
 }
@@ -124,14 +127,16 @@ data "oci_objectstorage_namespace" "this" {
 }
 
 module "storage" {
-  source         = "../modules/storage"
-  namespace      = data.oci_objectstorage_namespace.this.namespace
-  compartment_id = local.compartment_id
-  bucket_name    = local.bucket_name
+  source             = "../modules/storage"
+  namespace          = data.oci_objectstorage_namespace.this.namespace
+  compartment_id     = local.compartment_id
+  deploy_bucket_name = local.deploy_bucket_name
+  dumps_bucket_name  = local.dumps_bucket_name
+  logs_bucket_name   = local.logs_bucket_name
   afp_config = {
     region    = var.region
     namespace = data.oci_objectstorage_namespace.this.namespace
-    bucket    = local.bucket_name
+    bucket    = local.deploy_bucket_name
     db = {
       host            = module.database.ip_address
       port            = module.database.port
@@ -150,14 +155,27 @@ module "storage" {
       secret_ids = p.secrets
     }]
   }
+
+  # The lifecycle policies need Object Storage's permission first.
+  depends_on = [module.policies]
 }
 
 module "policies" {
-  source           = "../modules/policies"
-  tenancy_ocid     = var.tenancy_ocid
+  source                  = "../modules/policies"
+  tenancy_ocid            = var.tenancy_ocid
+  compartment_id          = local.compartment_id
+  compartment_name        = local.compartment_name
+  region                  = var.region
+  deploy_bucket_name      = local.deploy_bucket_name
+  write_only_bucket_names = [local.dumps_bucket_name, local.logs_bucket_name]
+  log_group_id            = module.logging.log_group_id
+}
+
+# The projects' container logs, sent by the VM's logging agent.
+module "logging" {
+  source           = "../modules/logging"
   compartment_id   = local.compartment_id
-  compartment_name = local.compartment_name
-  bucket_name      = local.bucket_name
+  dynamic_group_id = module.policies.dynamic_group_id
 }
 
 module "vm" {
@@ -209,7 +227,7 @@ module "devops" {
   tenancy_ocid           = var.tenancy_ocid
   compartment_id         = local.compartment_id
   compartment_name       = local.compartment_name
-  bucket_name            = local.bucket_name
+  bucket_name            = local.deploy_bucket_name
   github_token_secret_id = var.github_token_secret_id
   notification_email     = var.notification_email
   vm_instance_id         = module.vm.instance_id
@@ -217,4 +235,12 @@ module "devops" {
     name       = p.name
     repository = p.repository
   } if p.repository != null]
+}
+
+# Mails the platform's notification topic when the weekly DB dump fails.
+module "alarm" {
+  source           = "../modules/alarm"
+  compartment_id   = local.compartment_id
+  topic_id         = module.devops.topic_id
+  logs_bucket_name = local.logs_bucket_name
 }

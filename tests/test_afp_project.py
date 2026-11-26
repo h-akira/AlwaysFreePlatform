@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 import pytest
-from afp_world import DB_PASSWORD, EXAMPLE_API_KEY, EXAMPLE_SETTING, EXAMPLE_SIGNING_KEY, World, make_ctx
+from afp_world import DB_PASSWORD, DEPLOY, DUMPS, EXAMPLE_API_KEY, EXAMPLE_SETTING, EXAMPLE_SIGNING_KEY, World, make_ctx
 
 from afp import cli
 from afp import project as pm
@@ -23,10 +23,13 @@ def deploy(world: World, tmp_path: Path, project: str, tag: str) -> str:
 def test_first_deploy(tmp_path: Path) -> None:
     world = World()
     summary = deploy(world, tmp_path, "hello", "v1")
-    assert summary.startswith("hello is now v1 (previous: none); dump before it: dumps/hello/")
+    assert summary.startswith("hello is now v1 (previous: none); dump before it: hello/")
     assert world.running == {"hello": "v1"}
     assert world.state("hello") == {"current": "v1", "previous": None}
-    assert any(k.startswith("dumps/hello/") and k.endswith("-before-v1.sql.gz") for k in world.objects)
+    assert world.buckets["state/hello.json"] == DEPLOY
+    # The dump goes to its own bucket, named <project>/<time>-before-<tag>.sql.gz.
+    [dump] = world.in_bucket(DUMPS)
+    assert dump.startswith("hello/") and dump.endswith("-before-v1.sql.gz")
 
 
 def test_values_go_through_the_environment(tmp_path: Path) -> None:
@@ -77,7 +80,7 @@ def test_failed_deploy_is_not_rolled_back(tmp_path: Path) -> None:
     # state matches what runs and make rollback goes back to v1.
     assert world.running == {"hello": "v2"}
     assert world.state("hello") == {"current": "v2", "previous": "v1"}
-    assert any(k.startswith("dumps/hello/") and k.endswith("-before-v2.sql.gz") for k in world.objects)
+    assert any(k.startswith("hello/") and k.endswith("-before-v2.sql.gz") for k in world.in_bucket(DUMPS))
     summary = cli.cmd_rollback(make_ctx(tmp_path, world), argparse.Namespace(project="hello"))
     assert summary.startswith("hello is now v1 (previous: v2)")
     assert world.running == {"hello": "v1"}
@@ -96,7 +99,7 @@ def test_missing_release_changes_nothing(tmp_path: Path) -> None:
     world = World()
     with pytest.raises(AfpError, match="no release releases/hello/v9/compose.afp.yaml"):
         cli.cmd_deploy(make_ctx(tmp_path, world), argparse.Namespace(project="hello", tag="v9"))
-    assert not any(k.startswith("dumps/") for k in world.objects)
+    assert not world.in_bucket(DUMPS)
     assert world.running == {}
 
 
@@ -131,7 +134,8 @@ def test_rollback_without_previous(tmp_path: Path) -> None:
 def test_backup_all_and_one(tmp_path: Path) -> None:
     world = World()
     summary = cli.cmd_backup(make_ctx(tmp_path, world), argparse.Namespace(project=None))
-    assert summary.count("dumps/") == 2
+    assert summary.startswith("dumped to bucket-afp-dumps: hello/") and summary.count(".sql.gz") == 2
+    assert [n.split("/")[0] for n in world.in_bucket(DUMPS)] == ["app-a", "hello"]
     dumps = [c for c in world.calls if "mysqldump" in c["args"]]
     assert [d["args"][d["args"].index("--databases") + 1] for d in dumps] == ["hello", "app_a"]
     assert all(d["env"] == {"MYSQL_PWD": "Admin-Pass_1"} for d in dumps)
@@ -257,6 +261,7 @@ def test_source_with_a_symlink_is_refused(tmp_path: Path) -> None:
         tar.addfile(link)
     world = World()
     world.files["releases/hello/v1/source.tar.gz"] = buf.getvalue()
+    world.buckets["releases/hello/v1/source.tar.gz"] = DEPLOY
     with pytest.raises(AfpError, match="not allowed"):
         deploy(world, tmp_path, "hello", "v1")
 

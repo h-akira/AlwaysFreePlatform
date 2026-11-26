@@ -13,8 +13,8 @@
 #             compose.afp.yaml into the bucket, and runs afp deploy on the VM
 #             through Run Command, waiting for it.
 #   rollback  Runs afp rollback on the VM (previous version; the DB stays).
-#   backup    Runs afp backup on the VM (dumps to the bucket).
-#   On failure, the end of the full log is fetched from the bucket.
+#   backup    Runs afp backup on the VM (dumps to the dumps bucket).
+#   On failure, the end of the full log is fetched from the logs bucket.
 #
 # Environment:
 #   AFP_CONFIG_DIR  Directory holding terraform.tfvars.json (required).
@@ -48,16 +48,19 @@ afp_json() {
   oci_ os object get -bn "$BUCKET" --name afp.json --file - 2> /dev/null || die "cannot read afp.json from the bucket"
 }
 
-# Run afp on the VM; on failure show the end of the full log from the bucket.
+# Run afp on the VM; on failure show the end of the full log, from the
+# bucket that afp names in its last line ("log: bucket <bucket>: <object>").
 run_afp() {
-  local out rc=0 log
+  local out rc=0 where log_bucket log
   out="$("$ROOT/scripts/run-command.sh" send --wait "$AFP $*")" || rc=$?
   printf '%s\n' "$out"
   if (( rc != 0 )); then
-    log="$(printf '%s\n' "$out" | sed -n "s/^log: bucket $BUCKET: //p" | tail -1)"
-    if [[ -n "$log" ]]; then
+    where="$(printf '%s\n' "$out" | sed -n 's/^log: bucket //p' | tail -1)"
+    log_bucket="${where%%: *}"
+    log="${where#*: }"
+    if [[ -n "$where" && "$log_bucket" != "$where" ]]; then
       echo "--- end of $log ---"
-      oci_ os object get -bn "$BUCKET" --name "$log" --file - 2> /dev/null | tail -n 40 || true
+      oci_ os object get -bn "$log_bucket" --name "$log" --file - 2> /dev/null | tail -n 40 || true
     fi
   fi
   return "$rc"
@@ -129,16 +132,12 @@ cmd_deploy() {
 cmd_rollback() {
   [[ $# -eq 1 ]] || usage
   check_project "$1"
-  load_outputs
-  BUCKET="$(out bucket)"
   run_afp rollback "$1"
 }
 
 cmd_backup() {
   [[ $# -le 1 ]] || usage
   [[ $# -eq 0 ]] || check_project "$1"
-  load_outputs
-  BUCKET="$(out bucket)"
   run_afp backup "$@"
 }
 

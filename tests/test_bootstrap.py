@@ -12,9 +12,10 @@ def test_bootstrap_parses() -> None:
 
 
 def test_bucket_name_matches_terraform() -> None:
+    # platform.tar.gz and afp.json are in the deploy bucket.
     main_tf = (ROOT / "terraform" / "main" / "main.tf").read_text()
-    assert 'bucket_name = "bucket-afp-main"' in main_tf
-    assert 'BUCKET="bucket-afp-main"' in BOOTSTRAP.read_text()
+    assert 'deploy_bucket_name = "bucket-afp-deploy"' in main_tf
+    assert 'BUCKET="bucket-afp-deploy"' in BOOTSTRAP.read_text()
 
 
 def _image_regex() -> str:

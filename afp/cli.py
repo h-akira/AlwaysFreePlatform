@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from afp import caddy, config, db
+from afp import backup_timer, caddy, config, db, docker_config
 from afp import project as projects_mod
 from afp.errors import AfpError
 from afp.lock import Lock
@@ -38,6 +38,8 @@ class Paths:
     projects_dir: Path = Path("/opt/afp/projects")
     # DB dumps on their way to the bucket (on disk, not tmpfs).
     work_dir: Path = Path("/var/tmp/afp")
+    docker_daemon_json: Path = docker_config.DAEMON_JSON
+    systemd_dir: Path = Path("/etc/systemd/system")
 
 
 @dataclass
@@ -55,17 +57,23 @@ class Context:
 
 def load_config(ctx: Context) -> config.Config:
     oci = ctx.need_oci()
-    cfg = config.parse(oci.get_object(config.BUCKET, "afp.json"))
+    cfg = config.parse(oci.get_object(config.DEPLOY_BUCKET, "afp.json"))
     oci.namespace = cfg.namespace
     return cfg
 
 
 def cmd_install(ctx: Context, args: argparse.Namespace) -> str:
     """The VM-wide pieces the projects and Caddy rely on. Idempotent."""
+    # The bootstrap writes daemon.json without the labels and restarts Docker
+    # before this runs, so a change takes a restart; afp sync, which follows,
+    # starts Caddy and the projects again.
+    if docker_config.write_daemon_json(ctx.paths.docker_daemon_json):
+        ctx.runner.run(["systemctl", "restart", "docker.service", "afp-metadata-block.service"])
     if ctx.runner.run(["docker", "network", "inspect", NETWORK], check=False, quiet=True).returncode != 0:
         ctx.runner.run(["docker", "network", "create", NETWORK])
     ctx.paths.caddy_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
     ctx.paths.run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    backup_timer.install(ctx, ctx.paths.systemd_dir)
     return "installed"
 
 
@@ -139,13 +147,38 @@ def cmd_rollback(ctx: Context, args: argparse.Namespace) -> str:
 
 
 def cmd_backup(ctx: Context, args: argparse.Namespace) -> str:
-    """Dump PROJECT's database (every project's without PROJECT) to the bucket."""
+    """Dump PROJECT's database (every project's without PROJECT) to the dumps bucket.
+
+    A project that fails does not stop the others; the run fails at the end.
+    Without PROJECT (the weekly timer), the result goes to the metric
+    afp/backup_ok (1: every dump made, also when there are no projects;
+    0: not), which the alarm alarm-afp-backup watches.
+    """
     cfg = load_config(ctx)
-    targets = [projects_mod.find(cfg, args.project)] if args.project else cfg.projects
-    with Lock(ctx.paths.run_dir / "lock", LOCK_TIMEOUT):
-        projects = projects_mod.Projects(ctx, cfg)
-        names = [projects.dump(p) for p in targets]
-    return "dumped: " + (", ".join(names) or "no projects")
+    every = args.project is None
+    targets = cfg.projects if every else [projects_mod.find(cfg, args.project)]
+    projects = projects_mod.Projects(ctx, cfg)
+    dumped: list[str] = []
+    failed: list[str] = []
+    try:
+        with Lock(ctx.paths.run_dir / "lock", LOCK_TIMEOUT):
+            for p in targets:
+                try:
+                    dumped.append(projects.dump(p))
+                except Exception as e:  # dump the others all the same
+                    ctx.log.detail(traceback.format_exc())
+                    ctx.log.info(f"error: dump of {p.name} failed: {e}")
+                    failed.append(p.name)
+    except Exception:  # e.g. the lock timed out
+        if every:
+            projects.post_backup_ok(False)
+        raise
+    unsent = every and not projects.post_backup_ok(not failed)
+    summary = f"dumped to {config.DUMPS_BUCKET}: " + (", ".join(dumped) or ("none" if targets else "no projects"))
+    problems = ([f"dump failed: {', '.join(failed)}"] if failed else []) + (["metric backup_ok not sent"] if unsent else [])
+    if problems:
+        raise AfpError(f"{'; '.join(problems)}; {summary}")
+    return summary
 
 
 @dataclass(frozen=True)
@@ -180,7 +213,7 @@ COMMANDS = {
     ),
     "backup": Command(
         cmd_backup,
-        "dump the DB of PROJECT, or of every project, to the bucket",
+        "dump the DB of PROJECT, or of every project, to the dumps bucket",
         upload_log=True,
         arguments=(("project", "?"),),
     ),
@@ -199,17 +232,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def finish(ctx: Context, object_name: str, upload: bool) -> str:
-    """Upload the log to the bucket; tell where it is."""
+    """Upload the log to the logs bucket; tell where it is."""
     ctx.log.close()
     if not upload or ctx.oci is None or ctx.oci.namespace is None:
         return str(ctx.log.path)
     try:
         # quiet: the log is closed, and the upload must not write into it.
-        ctx.oci.put_object(config.BUCKET, object_name, ctx.log.path, "text/plain", quiet=True)
+        ctx.oci.put_object(config.LOGS_BUCKET, object_name, ctx.log.path, "text/plain", quiet=True)
     except Exception as e:  # the command itself is over; only report it
         return f"{ctx.log.path} (upload failed: {type(e).__name__})"
     ctx.log.path.unlink()
-    return f"bucket {config.BUCKET}: {object_name}"
+    return f"bucket {config.LOGS_BUCKET}: {object_name}"
 
 
 def main(argv: list[str] | None = None, paths: Paths | None = None) -> int:

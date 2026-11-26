@@ -31,13 +31,14 @@ if "stack list" in line:
 elif "get-stack-tf-state" in line:
     print(json.dumps({"outputs": {k: {"value": v} for k, v in {
         "vm_id": "ocid1.instance.oc1..vm", "compartment_id": "ocid1.compartment.oc1..c",
-        "bucket": "bucket-afp-main", "vm_arch": "arm64",
+        "bucket": "bucket-afp-deploy", "dumps_bucket": "bucket-afp-dumps", "logs_bucket": "bucket-afp-logs",
+        "vm_arch": "arm64",
     }.items()}}))
 elif "os object get" in line:
     name = arg("--name")
-    if name == "afp.json":
+    if name == "afp.json" and arg("-bn") == "bucket-afp-deploy":
         print(json.dumps({"image_prefix_base": "PREFIX_BASE", "projects": [{"name": "hello"}]}))
-    elif name.startswith("logs/"):
+    elif name == "x-deploy-hello.log" and arg("-bn") == "bucket-afp-logs":
         print("full log line 1\nfull log line 2")
     else:
         sys.exit("ObjectNotFound")
@@ -56,7 +57,7 @@ elif "command create" in line:
 elif "command-execution get" in line:
     state = os.environ.get("FAKE_STATE", "SUCCEEDED")
     code = 0 if state == "SUCCEEDED" else 1
-    text = "afp deploy: OK\nlog: bucket bucket-afp-main: logs/x-deploy-hello.log\n"
+    text = "afp deploy: OK\nlog: bucket bucket-afp-logs: x-deploy-hello.log\n"
     print(json.dumps({"data": {"lifecycle-state": state, "content": {"exit-code": code, "text": text}}}))
 else:
     sys.exit("fake oci: unexpected " + line)
@@ -153,7 +154,7 @@ def test_deploy_failure_shows_the_end_of_the_log(env: dict[str, str], repo: Path
     env["FAKE_STATE"] = "FAILED"
     result = run(["deploy", "hello", str(repo)], env)
     assert result.returncode == 1
-    assert "--- end of logs/x-deploy-hello.log ---" in result.stdout
+    assert "--- end of x-deploy-hello.log ---" in result.stdout
     assert "full log line 2" in result.stdout
 
 

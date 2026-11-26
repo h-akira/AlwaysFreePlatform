@@ -1,4 +1,4 @@
-"""Log of one afp run: a local file (uploaded to the bucket at the end) and stderr.
+"""Log of one afp run: a local file (uploaded to the logs bucket at the end) and stderr.
 
 Run Command returns only the last 1 KB of the output, so the full log goes to
 the bucket and stdout gets a short summary as the last lines.
@@ -19,9 +19,9 @@ def utc_stamp() -> str:
 
 
 def log_name(command: str, project: str | None = None) -> str:
-    """Object name of the log in the bucket, e.g. logs/20261114T010203Z-sync.log."""
+    """Object name of the log in the logs bucket, e.g. 20261114T010203Z-sync.log."""
     suffix = f"-{project}" if project else ""
-    return f"logs/{utc_stamp()}-{command}{suffix}.log"
+    return f"{utc_stamp()}-{command}{suffix}.log"
 
 
 def truncate(text: str, limit: int = SUMMARY_LIMIT) -> str:

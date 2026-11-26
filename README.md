@@ -7,7 +7,7 @@ OCI の Always Free を最大限に使い、個人開発の複数のプロジェ
 - VM はステートレス。消えても作り直せば自動で元に戻る。
 - 基盤はプロジェクトの中身を知らないので、プロジェクトは非公開のまま載せられる。
 
-> 開発中。見本のプロジェクト（`examples/hello`）は、`release` ブランチへの push から本番まで動く。基盤の監視と定期のバックアップは、まだ無い。
+> 開発中。見本のプロジェクト（`examples/hello`）は、`release` ブランチへの push から本番まで動く。DB のダンプは週 1 回取り、アプリのログは OCI Logging に送る（どちらも本番での確かめはこれから）。基盤の監視は、まだ無い。
 
 ## 文書
 
@@ -28,7 +28,7 @@ OCI の Always Free を最大限に使い、個人開発の複数のプロジェ
 |---|---|
 | [OCI の無料枠](docs/references/oci-free-tier.md) | Always Free の枠・制約・アイドル回収（確かめた日付と出典つき） |
 | [MySQL でアプリを書くときの注意](docs/references/mysql-notes.md) | ほかの DB（PostgreSQL など）との違い、日本語の照合順序、HeatWave の版の上がり方 |
-| [OCI Bastion](docs/references/oci-bastion.md) | プライベート・サブネットの資源に手元から入る方法（ポート転送） |
+| [OCI Bastion](docs/references/oci-bastion.md) | プライベート・サブネットのリソースに手元から入る方法（ポート転送） |
 | [OCI Resource Manager](docs/references/oci-resource-manager.md) | Terraform を OCI の側で実行するサービスの使い方と癖 |
 | [OCI Vault](docs/references/oci-vault.md) | 鍵とシークレットの削除待ちと、それが削除に与える影響 |
 | [OCI DevOps](docs/references/oci-devops.md) | VM へのデプロイ（インスタンス・グループ・Run Command）の仕組みと制約 |

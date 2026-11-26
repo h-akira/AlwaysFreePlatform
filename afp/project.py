@@ -1,12 +1,13 @@
 """Running projects: deploy, roll back, dump, and bring them back after a reboot.
 
-In the bucket:
+In the deploy bucket (config.DEPLOY_BUCKET):
   releases/<project>/<tag>/compose.afp.yaml   put there by make deploy or the DevOps build
   releases/<project>/<tag>/source.tar.gz      the tag's source, put there by the DevOps build;
                                               when present, afp deploy builds the images on
                                               the VM and pushes them to OCIR (ADR 026)
   state/<project>.json                        {"current": tag, "previous": tag|null}
-  dumps/<project>/<time>[-before-<tag>].sql.gz
+In the dumps bucket (config.DUMPS_BUCKET):
+  <project>/<time>[-before-<tag>].sql.gz
 
 Values for compose.afp.yaml (docs/04_using.md §3), secrets included, go to
 docker compose through its environment; no env file is written.
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from afp import db
-from afp.config import BUCKET, Config, Project
+from afp.config import DEPLOY_BUCKET, DUMPS_BUCKET, Config, Project
 from afp.errors import AfpError
 from afp.log import utc_stamp
 
@@ -150,16 +151,16 @@ class Projects:
     # --- bucket ------------------------------------------------------------
 
     def read_state(self, p: Project) -> dict[str, str | None]:
-        return parse_state(self.oci.get_object_or_none(BUCKET, state_object(p.name)))
+        return parse_state(self.oci.get_object_or_none(DEPLOY_BUCKET, state_object(p.name)))
 
     def write_state(self, p: Project, state: dict[str, str | None]) -> None:
         path = self._work() / f"{p.name}.state.json"
         path.write_text(json.dumps(state) + "\n")
-        self.oci.put_object(BUCKET, state_object(p.name), path, "application/json")
+        self.oci.put_object(DEPLOY_BUCKET, state_object(p.name), path, "application/json")
         path.unlink()
 
     def fetch_release(self, p: Project, tag: str) -> Path:
-        text = self.oci.get_object_or_none(BUCKET, release_object(p.name, tag))
+        text = self.oci.get_object_or_none(DEPLOY_BUCKET, release_object(p.name, tag))
         if text is None:
             raise AfpError(f"no release {release_object(p.name, tag)} in the bucket; run make deploy")
         path = self.ctx.paths.projects_dir / p.name / tag / "compose.afp.yaml"
@@ -171,7 +172,7 @@ class Projects:
         """The tag's source archive in the work directory, or None if the
         release has none (make deploy built the images already)."""
         path = self._work() / f"{p.name}-{tag}-source.tar.gz"
-        if self.oci.download_object(BUCKET, source_object(p.name, tag), path):
+        if self.oci.download_object(DEPLOY_BUCKET, source_object(p.name, tag), path):
             return path
         path.unlink(missing_ok=True)
         return None
@@ -277,12 +278,12 @@ class Projects:
     # --- DB dumps ------------------------------------------------------------
 
     def dump(self, p: Project, label: str = "") -> str:
-        """Dump the project's database to the bucket; return the object name."""
+        """Dump the project's database to the dumps bucket; return the object name."""
         admin_password = self.oci.secret(self.cfg.db.admin_secret_id)
         work = self._work()
         raw = work / f"{p.name}.sql"
         packed = work / f"{p.name}.sql.gz"
-        name = f"dumps/{p.name}/{utc_stamp()}{label}.sql.gz"
+        name = f"{p.name}/{utc_stamp()}{label}.sql.gz"
         try:
             self.ctx.runner.run(
                 [
@@ -296,12 +297,31 @@ class Projects:
             )
             with open(raw, "rb") as src, gzip.open(packed, "wb") as dst:
                 shutil.copyfileobj(src, dst)
-            self.oci.put_object(BUCKET, name, packed, "application/gzip")
+            self.oci.put_object(DUMPS_BUCKET, name, packed, "application/gzip")
         finally:
             raw.unlink(missing_ok=True)
             packed.unlink(missing_ok=True)
-        self.ctx.log.info(f"dumped {p.db_name} to {name}")
+        self.ctx.log.info(f"dumped {p.db_name} to {DUMPS_BUCKET}: {name}")
         return name
+
+    # Custom metric of afp backup (namespace, name); must match terraform/modules/alarm.
+    BACKUP_METRIC = ("afp", "backup_ok")
+
+    def post_backup_ok(self, ok: bool) -> bool:
+        """Send the result of a backup of every project (1: all dumped, 0: not),
+        which the alarm alarm-afp-backup watches. False when it cannot be
+        sent; the reason is logged."""
+        namespace, name = self.BACKUP_METRIC
+        value = 1 if ok else 0
+        try:
+            if not self.cfg.compartment_id:
+                raise AfpError("afp.json has no compartment_id; run make apply")
+            self.oci.post_metric(self.cfg.compartment_id, namespace, name, value, {"command": "backup"})
+        except Exception as e:  # the dumps are over; only report it
+            self.ctx.log.info(f"error: cannot send the metric {namespace}/{name} = {value}: {e}")
+            return False
+        self.ctx.log.info(f"sent the metric {namespace}/{name} = {value}")
+        return True
 
     # --- operations ----------------------------------------------------------
 
@@ -333,7 +353,7 @@ class Projects:
         if not previous:
             raise AfpError(f"{p.name} has no previous version")
         result = self.deploy(p, previous, build=False)  # its images are in OCIR
-        return f"{result}; the DB is not rolled back (dumps are in dumps/{p.name}/)"
+        return f"{result}; the DB is not rolled back (dumps are in {DUMPS_BUCKET}: {p.name}/)"
 
     def start_stopped(self) -> list[str]:
         """Start each project's current version when none of it is running

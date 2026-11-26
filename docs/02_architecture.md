@@ -7,7 +7,8 @@
 無料枠の値と出典は [references/oci-free-tier.md](references/oci-free-tier.md) にある。構成を決めるのに効いたのは次の点。
 
 - **VM**: 無料で確実に作れるのは E2.1.Micro（1/8 OCPU・1 GB）の 2 台。A1（合計 2 OCPU・12 GB）は大きいが、リージョンによっては空きが無く作れないことが多い。
-- **DB**: MySQL HeatWave（1 ECPU・8 GB。ECPU は OCI の CPU の数え方の単位）が 1 個。小さなアプリを複数載せるには十分。
+- **DB**: MySQL HeatWave（1 ECPU・8 GB。ECPU は OCI の CPU の数え方の単位）が 1 個。小さなアプリを複数載せるには十分。自動バックアップの保持は 1 日で、変えられない。
+- **Logging**: ログの保存は月 10 GB まで 0 円。小さなアプリが数個なら収まる見込み（量は測っていない）。
 - **ホームリージョン**: Compute と DB は、ホームリージョンにしか無料で作れない。
 - **アイドル回収**: Always Free の Compute は、7 日間使用率が低いと回収されうる。個人用のアプリはこれに当たりやすい。
 - **無料でないもの**:
@@ -59,9 +60,10 @@ flowchart TB
   bep -. "ssh" .-> vm
   bep -. "MySQL" .-> mysql
   vault["OCI Vault"] -. "シークレット" .-> afp
-  os[("Object Storage<br/>一覧・今の版・ダンプ")] -. "読み書き" .-> afp
-  afp -. "基盤のヘルスチェック（1 時間ごと）" .-> mysql
-  afp -. "結果" .-> mon["OCI Monitoring<br/>アラーム → メール"]
+  os[("Object Storage<br/>一覧・今の版・ダンプ・操作のログ")] -. "読み書き" .-> afp
+  afp -. "基盤のヘルスチェック（1 時間ごと。未実装）" .-> mysql
+  afp -. "ダンプの成否・ヘルスチェックの結果" .-> mon["OCI Monitoring<br/>アラーム → メール"]
+  a & b -. "標準出力（エージェントが送る）" .-> logging[("OCI Logging<br/>アプリのログ")]
 ```
 
 ## 3. 部品と役目
@@ -72,13 +74,14 @@ flowchart TB
 | **Caddy** | 入口。HTTPS を受け、ドメイン名でプロジェクトに振り分ける。証明書（Let's Encrypt）を自動で取得・更新する |
 | **NLB**（OCI の Network Load Balancer） | 外からの入口。公開 IP を持ち、TCP の 80 番と 443 番を、そのまま（TLS を解かずに）VM の Caddy へ通す。利用者の IP を書き換えない（§5.4） |
 | **OCI DNS** | 基盤の公開 DNS のゾーン。プロジェクトごとの名前（`<プロジェクト>.<ゾーン>`）を、その VM の前の NLB の公開 IP に向ける（§5.4） |
-| **`afp`** | 基盤のコマンド（Python の標準ライブラリだけで書く。§5.8）。VM の上で、初期設定・プロジェクトの一覧に合わせた同期（プロジェクトの DB とユーザの作成を含む）・デプロイ・バックアップ・基盤のヘルスチェックを受け持つ。外からは、VM の中のエージェント（Oracle Cloud Agent の Run Command）を通して呼ぶ（§5.6） |
+| **`afp`** | 基盤のコマンド（Python の標準ライブラリだけで書く。§5.8）。VM の上で、初期設定・プロジェクトの一覧に合わせた同期（プロジェクトの DB とユーザの作成を含む）・デプロイ・DB のダンプ・基盤のヘルスチェック（未実装）を受け持つ。外からは、VM の中のエージェント（Oracle Cloud Agent の Run Command）を通して呼ぶ（§5.6） |
 | **MySQL HeatWave** | 全プロジェクトで共有する DB。プロジェクトごとにデータベースとユーザを分ける |
 | **OCI Vault** | シークレットの置き場所。生成できる値は Terraform が生成して Vault に置く（値は Resource Manager の state にも残る）。外から持ってくる秘密の値（GitHub のトークン・外部の API キー）は、管理者が手で作る（§5.5） |
-| **Object Storage** | プロジェクトの一覧・各プロジェクトの今の版・リリース一式・DB のダンプ・`afp` の操作のログ |
+| **Object Storage** | 役目ごとに 3 つのバケット（§5.10）。プロジェクトの一覧・各プロジェクトの今の版・リリース一式・基盤のコード、DB のダンプ、`afp` の操作のログ |
 | **OCIR**（OCI のコンテナ・レジストリ。[references/oci-registry.md](references/oci-registry.md)） | ビルドしたイメージ。リポジトリはプロジェクトのサービスごと |
 | **OCI DevOps** | リポジトリを伝えたプロジェクトの `release` ブランチへの push を受けて、そのプロジェクトのリリース一式を Object Storage に置き、VM に `afp deploy` を実行させる（§5.6） |
-| **OCI Monitoring・Notifications** | 基盤のヘルスチェック（§5.7）の結果を受け、失敗したり届かなくなったりしたらメールで知らせる |
+| **OCI Monitoring・Notifications** | 週 1 回のダンプ（§5.3）の成否を受け、失敗したらメールで知らせる。基盤のヘルスチェック（§5.7。未実装）の結果も受ける |
+| **OCI Logging** | アプリのログ（コンテナの標準出力・標準エラー）を、全プロジェクトまとめて 1 つのログに残す（§5.11）。VM の中の Oracle Cloud Agent が送る |
 | **VCN** | 基盤のネットワーク。サブネットを役目ごとに 4 つに分ける（§5.4） |
 | **OCI Bastion** | 手元からプライベート・サブネットの VM と DB に入るための、一時的な入口（§5.9） |
 | **Terraform**（OCI Resource Manager で実行。[references/oci-resource-manager.md](references/oci-resource-manager.md)） | VM の外のものを作る。プロジェクトの一覧から、プロジェクトごとの生成するシークレットとパイプラインも作る。手元の `terraform/` を、そのまま（git に頼らず）送って実行する |
@@ -97,7 +100,7 @@ flowchart TB
 - **基盤の開発中は、削除を防ぐ仕組みを一切付けない**（Terraform の `prevent_destroy`・HeatWave の削除防止・コンパートメントを消せなくする設定）。
 - Terraform の state は Resource Manager が預かる。手元に state を置かない。
 - 環境ごとの値（プロジェクトの一覧・DNS のゾーン・通知のメールの宛先・OCID など）は、この公開リポジトリに置かず、別の非公開の設定に置く。
-- 基盤が作る OCI のリソースの名前は `<種類>-afp-<識別子>` にする（例: `bucket-afp-main`・`subnet-afp-db`・`trigger-afp-<プロジェクト>`）。識別子は必ず付け、1 つしか無いものは `main`。OCIR のリポジトリは `repo-afp-<プロジェクト>/<サービス>`。名前に英数字しか使えない Bastion は、ハイフンを除く（`bastionafpmain`）。
+- 基盤が作る OCI のリソースの名前は `<種類>-afp-<識別子>` にする（例: `bucket-afp-deploy`・`subnet-afp-db`・`trigger-afp-<プロジェクト>`）。識別子は必ず付け、1 つしか無いものは `main`。OCIR のリポジトリは `repo-afp-<プロジェクト>/<サービス>`。名前に英数字しか使えない Bastion は、ハイフンを除く（`bastionafpmain`）。
 
 ## 4. 状態の置き場所
 
@@ -107,13 +110,15 @@ VM の中には失って困るものを置かない。
 |---|---|
 | アプリのデータ | MySQL HeatWave |
 | シークレット | OCI Vault |
-| どのプロジェクトをどのドメインで動かすか | Object Storage（Terraform が書く） |
-| 各プロジェクトの今の版 | Object Storage（デプロイが成功したら `afp` が書く） |
+| どのプロジェクトをどのドメインで動かすか | `bucket-afp-deploy`（Terraform が書く） |
+| 各プロジェクトの今の版 | `bucket-afp-deploy`（デプロイが成功したら `afp` が書く） |
 | イメージ | OCIR |
-| リリース一式 | Object Storage（デプロイが版ごとに置く） |
-| 基盤のコード | Object Storage の `platform.tar.gz`（管理者の手元のコードを、そのまま `make platform` が置く。§5.6） |
+| リリース一式 | `bucket-afp-deploy`（デプロイが版ごとに置く） |
+| 基盤のコード | `bucket-afp-deploy` の `platform.tar.gz`（管理者の手元のコードを、そのまま `make platform` が置く。§5.6） |
+| DB のダンプ | `bucket-afp-dumps`（28 日で消える。§5.3） |
 | HTTPS の証明書 | VM の中。消えたら Caddy が自動で取り直す |
-| ログ | VM の中（消えてよい）。`afp` の操作のログは Object Storage |
+| アプリのログ | OCI Logging（30 日。§5.11）。VM の中の Docker のログも残るが、VM を作り直すと消える |
+| `afp` の操作のログ | `bucket-afp-logs`（28 日で消える） |
 
 VM が消えたときは、Terraform で作り直すだけで戻る。
 
@@ -152,7 +157,13 @@ sequenceDiagram
 ### 5.3 DB
 
 - MySQL HeatWave の Always Free を、全プロジェクトで共有する。手元では公式の `mysql` のコンテナを本番と同じ版・同じ設定で動かす。
-- HeatWave の Always Free は保守のたびに最新の版へ上がるので、手元の版を追いかける。バックアップは 1 日分しかないので、基盤が毎日ダンプを取る。
+- HeatWave の Always Free は保守のたびに最新の版へ上がるので、手元の版を追いかける。
+- HeatWave の Always Free の自動バックアップ（保持 1 日で変えられない）は、そのまま使う。それを補うため、基盤がダンプを取る。
+  - **週 1 回、毎週日曜 18:00 UTC（日本時間の月曜 3:00）** に、VM の systemd の timer（`afp install` が置く）が、全プロジェクトのダンプを取る（`afp backup`）。1 つが失敗しても残りを取り、最後に失敗で終わる。
+  - デプロイの直前にも、そのプロジェクトのダンプを取る。
+  - ダンプは `bucket-afp-dumps` に置き、ライフサイクル・ポリシー（Object Storage が決まった日数で消す規則）で 28 日で消す。週 1 回のダンプは 4 世代残る。デプロイの直前のダンプも 28 日で消える。
+  - 全プロジェクトのダンプの成否を、Monitoring のメトリクス（成功で 1、失敗で 0）として送る。0 になるとアラームが、デプロイの成否と同じ通知のトピックにメールする。ダンプが動かなかったこと（VM の停止・timer が動かない）は、これでは分からない。
+  - 戻すときは、ダンプを DB に流し込む（手順は wiki）。
 - 基盤が定期的に触る（§5.7 のヘルスチェック）。
 
 ### 5.4 入口とネットワーク
@@ -210,7 +221,7 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 
 ### 5.7 基盤の監視
 
-- VM が定期的に（1 時間ごと）HeatWave に問い合わせ、結果を OCI Monitoring に送る。失敗したときと、届かなくなったとき（VM が止まった）にアラームでメールする。
+- VM が定期的に（1 時間ごと）HeatWave に問い合わせ、結果を OCI Monitoring に送る。失敗したときと、届かなくなったとき（VM が止まった）にアラームでメールする。**未実装**。今の監視は、週 1 回のダンプの失敗のアラーム（§5.3）だけ。
 - アプリの監視は各プロジェクトの責任とし、基盤は用意しない。
 
 ### 5.8 `afp`
@@ -225,7 +236,28 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 - 手元から DB に入るときは、OCI Bastion のポート転送を使う（[references/oci-bastion.md](references/oci-bastion.md)）。セッションの鍵は、そのたびに作って捨てる。
 - 手元から VM に ssh で入るのは保守のときだけで、Bastion の Managed SSH のセッションを使う。鍵はそのたびに作って捨て、VM に固定の鍵を置かない。22 番は外に開けない。
 
-### 5.10 作らないもの
+### 5.10 バケット
+
+- 基盤のバケットは、役目ごとに 3 つ。
+
+| バケット | 中身 | 消す規則 | VM の権限 |
+|---|---|---|---|
+| `bucket-afp-deploy` | プロジェクトの一覧（`afp.json`）・各プロジェクトの今の版・リリース一式・基盤のコード | 無し | 読み書き |
+| `bucket-afp-dumps` | DB のダンプ（`<プロジェクト>/<UTC の時刻>[-before-<版のタグ>].sql.gz`） | 28 日で消す | 新しく置くことだけ |
+| `bucket-afp-logs` | `afp` の操作のログ（`<UTC の時刻>-<操作>[-<プロジェクト>].log`。操作 1 回で 1 ファイル） | 28 日で消す | 新しく置くことだけ |
+
+- VM の権限を「新しく置くことだけ」に絞れているかは、未確認。
+
+### 5.11 アプリのログ
+
+- アプリは、ログを標準出力・標準エラーに出す。VM の中の Oracle Cloud Agent（Custom Logs Monitoring のプラグイン）が、Docker のログのファイルを読み、OCI Logging に送る。
+- 送り先は、ロググループ `loggroup-afp-apps` のログ `log-afp-apps` の 1 つ。**全プロジェクトのログを 1 つのログにまとめ、プロジェクトごとには分けない**。保存は 30 日。見るときは、検索でプロジェクトの名前で絞る。
+- どのプロジェクトのログかを見分けるため、`afp install` が Docker の設定に、各行へ compose のプロジェクトとサービスの名前を入れる設定（`labels`）を書く。各行に名前が入るかは、未確認。
+- ログを読める人は、全プロジェクトのログを読める（[01](01_purpose.md) §4 の前提による）。
+- VM の中の Docker のログ（10 MB × 3）も残る。
+- 未確認: A1 の VM で実際に送れるか。VM がそのロググループにだけ送れるよう権限を絞れているか。
+
+### 5.12 作らないもの
 
 - 既製の PaaS（Dokku・Coolify など）・Kubernetes・Nomad
 - 共通のログイン（SSO）。各アプリが自分でログインを持つ

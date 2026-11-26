@@ -19,6 +19,8 @@ variable "compartment_name" {
   type = string
 }
 
+# The deploy bucket: platform.tar.gz and the release bundles. DevOps needs
+# none of the others.
 variable "bucket_name" {
   type = string
 }
@@ -311,4 +313,8 @@ output "connection_id" {
 
 output "build_pipeline_ids" {
   value = { for name, _ in local.projects : name => oci_devops_build_pipeline.project[name].id }
+}
+
+output "topic_id" {
+  value = oci_ons_notification_topic.devops.id
 }

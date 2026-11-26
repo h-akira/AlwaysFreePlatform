@@ -2,7 +2,7 @@
 
 OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 
-- **確かめた日**: 2026-11-07（Oracle の公式文書）。予約済みの公開 IP・Cloud Guard・アイドル回収は 2026-11-13。MySQL HeatWave の管理者のパスワードの特殊文字は 2026-11-22。DNS は 2026-11-23。Network Load Balancer・NAT ゲートウェイ・サービス・ゲートウェイは 2026-11-25
+- **確かめた日**: 2026-11-07（Oracle の公式文書）。予約済みの公開 IP・Cloud Guard・アイドル回収は 2026-11-13。MySQL HeatWave の管理者のパスワードの特殊文字は 2026-11-22。DNS は 2026-11-23。Network Load Balancer・NAT ゲートウェイ・サービス・ゲートウェイは 2026-11-25。Logging と、MySQL HeatWave の有料の種類の単価は 2026-11-26
 - **無料枠は変わる**（2026-06 に A1 の枠が半分になった）。使う前に §6 の出典で確かめ直す。
 
 ## 1. 無料枠の種類
@@ -28,6 +28,7 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 | 外向きの転送 | 10 TB/月 |
 | Monitoring | 取り込み 5 億点/月・読み出し 10 億点/月 |
 | Notifications | メール 1,000 通/月 |
+| Logging | ログの保存 10 GB/月（価格の API。下の注） |
 | Email Delivery | 3,000 通/月 |
 | Resource Manager | スタック 100 個・同時ジョブ 2 個 |
 
@@ -41,6 +42,8 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 - **予約済みの公開 IP**: Oracle の価格の API（§6）に品目が無い。予約済みの公開 IP を出したときの Oracle の発表では「料金はかからない」とされている（古い発表で、今の価格表の記述では確かめられなかった）。上限（`reserved-public-ip-count`）はリージョンあたり 50 だった（2026-11-13 実測。テナンシによって違いうる）。
 - **Network Load Balancer**: 公式文書の概要に「Network load balancers are Always Free tier.」とある。帯域の設定は無く、通信に合わせて広がる（「Capable of scaling beyond 8 Gbps.」）。価格の API に品目が無い。テナンシの上限（`max-nlb-flexible-count`）はリージョンあたり 10 だった（2026-11-25 実測。テナンシによって違いうる）。
 - **NAT ゲートウェイ・サービス・ゲートウェイ**: 価格の API に品目が無い。料金のページは読めず、無料かは公式の料金の記述で確かめていない（2026-11-25）。NAT ゲートウェイの上限（`nat-gateway-count`）は 1 だった（2026-11-25 実測）。
+- **Logging**: 価格の API では、品目は「OCI - Logging - Storage」（B92593）の 1 つだけで、**月 10 GB まで 0 円**、超えた分は 1 GB・月あたり 0.05 USD（7.75 円）。PAYG の品目そのものに 10 GB までの無料の段が付いている。1 回の送信ごとに付帯の情報（最低 500 バイト）が加わり、量に数えられる。取り込みと検索に料金がかかるかは、docs.oracle.com で確かめられなかった（未確認。価格の API に品目は無い）。保存の日数は 30 日刻みで最大 180 日（2026-11-26）。
+- **Logging Analytics**: 価格の API で、1 単位で月 372 USD から（2026-11-26）。
 - **Cloud Guard**: 設定と操作の見張り（Configuration・Activity の検出）は、価格の API に品目が無い。無料のテナンシ（Always Free だけ）では有効にできない（公式文書）。VM の中を見張る Instance Security は、Standard が 1 台・1 時間あたり 0 円、Enterprise が 1 台・1 時間あたり 1.0695 円（1 台を 1 か月動かすと約 780 円）。都度の問い合わせ（Enterprise）は月 95 万回まで 0 円、それを超えると 1 回 0.155 円（2026-11-13 に価格の API で確認。品目 B108188・B108189・B108190）。無料のレシピ（Standard）は、検出の規則が 2 つで、1 リージョンあたり 5 台まで（公式文書）。
 
 ## 3. MySQL HeatWave の Always Free
@@ -57,6 +60,12 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 | ネットワーク | VCN のプライベート・サブネットに置く |
 | 作成の失敗 | 空きが無いと `OutOfHostCapacity` になることがある |
 | サポート | SLA なし。Oracle のサポートの対象外 |
+
+有料の種類に変えるとき（2026-11-26 に調べた）:
+
+- `MySQL.Free` から有料の種類へは、その場で変えられる。変えると課金される DB System になり、DB は再起動する（公式文書 [Editing a DB System](https://docs.oracle.com/en-us/iaas/mysql-database/doc/editing-db-system.html)）。
+- いちばん小さい有料の種類は `MySQL.2`（2 ECPU・16 GiB）。価格の API の単価は、ECPU 1 時間 0.0366 USD（5.673 円。B108030）、ストレージ 1 GB・月 0.04 USD（6.2 円。B92426）、バックアップの保存 1 GB・月 0.04 USD（6.2 円。B92483）。2 ECPU を常に動かし、ストレージ 50 GB なら、月に約 56.5 USD（約 8,750 円）の見込み（2 ECPU 分が課金されることと、地域で単価が同じことは推測）。
+- バックアップの保存は、動いている DB System のストレージと同じ量までは無料（公式文書）。
 
 公式文書に見つからなかったこと:
 

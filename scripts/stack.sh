@@ -15,8 +15,8 @@
 #            after), then sends afp-bootstrap to the VM through Run Command
 #            (without waiting), so that the VM picks up afp.json.
 #   destroy  Destroy every resource of the main stack (the stack itself is kept).
-#            Deletes the GitHub triggers and empties the bucket first, dumps
-#            included. Asks to type the stack
+#            Deletes the GitHub triggers and empties the buckets first, dumps
+#            and logs included. Asks to type the stack
 #            name, or needs AFP_CONFIRM_DESTROY=<name>. Refused for the base stack.
 #   outputs  Print the stack's outputs as KEY=VALUE lines.
 #
@@ -197,21 +197,26 @@ cmd_apply() {
   fi
 }
 
-# A bucket with objects cannot be deleted. afp.json is left to Terraform.
-empty_bucket() {
-  local bucket
-  bucket="$(stack_outputs "$1" | sed -n 's/^bucket=//p')"
-  if [[ -z "$bucket" ]]; then
-    echo "No bucket in the stack's outputs; nothing to empty."
-    return
-  fi
-  if ! oci_ os bucket get --bucket-name "$bucket" > /dev/null 2>&1; then
-    echo "Bucket $bucket not found; nothing to empty."
-    return
-  fi
-  echo "Emptying bucket $bucket ..."
-  oci_ os object bulk-delete --bucket-name "$bucket" --exclude afp.json --force > /dev/null \
-    || die "cannot empty bucket $bucket"
+# A bucket with objects cannot be deleted. afp.json (in the deploy bucket) is
+# left to Terraform.
+BUCKET_OUTPUTS="bucket dumps_bucket logs_bucket"
+empty_buckets() {
+  local outputs key bucket
+  outputs="$(stack_outputs "$1")"
+  for key in $BUCKET_OUTPUTS; do
+    bucket="$(printf '%s\n' "$outputs" | sed -n "s/^$key=//p")"
+    if [[ -z "$bucket" ]]; then
+      echo "No $key in the stack's outputs; nothing to empty."
+      continue
+    fi
+    if ! oci_ os bucket get --bucket-name "$bucket" > /dev/null 2>&1; then
+      echo "Bucket $bucket not found; nothing to empty."
+      continue
+    fi
+    echo "Emptying bucket $bucket ..."
+    oci_ os object bulk-delete --bucket-name "$bucket" --exclude afp.json --force > /dev/null \
+      || die "cannot empty bucket $bucket"
+  done
 }
 
 cmd_destroy() {
@@ -221,14 +226,14 @@ cmd_destroy() {
 
   if [[ "${AFP_CONFIRM_DESTROY:-}" != "$STACK_NAME" ]]; then
     [[ -t 0 ]] || die "not a terminal; set AFP_CONFIRM_DESTROY=$STACK_NAME to confirm"
-    echo "This deletes everything in the bucket too, DB dumps included."
+    echo "This deletes everything in the buckets too, DB dumps included."
     read -r -p "Destroy all resources of stack '$STACK_NAME'? Type the stack name: " answer
     [[ "$answer" == "$STACK_NAME" ]] || die "aborted"
   fi
 
   # Terraform does not know the triggers; they keep the DevOps project alive.
   stack_outputs "$stack_id" | "${TRIGGERS[@]}" delete-all || die "cannot delete the triggers"
-  empty_bucket "$stack_id"
+  empty_buckets "$stack_id"
   echo "Destroying ..."
   run_job create-destroy-job --stack-id "$stack_id" --display-name "destroy-$(date -u +%Y%m%dT%H%M%SZ)" \
     --execution-plan-strategy AUTO_APPROVED

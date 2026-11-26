@@ -11,10 +11,10 @@
 #   3. Docker, the compose plugin and the OCI CLI
 #   4. block containers from the metadata service (except the VCN's DNS)
 #   5. let ocarun (Run Command) sudo only this script and afp
-#   6. take the platform code from platform.tar.gz in the bucket, then afp install / sync
+#   6. take the platform code from platform.tar.gz in the deploy bucket, then afp install / sync
 set -euo pipefail
 
-BUCKET="bucket-afp-main" # must match the bucket name in terraform/main
+BUCKET="bucket-afp-deploy" # must match the deploy bucket name in terraform/main
 AFP_DIR="/opt/afp"
 SWAP_FILE="/swapfile"
 SWAP_MB=2048
