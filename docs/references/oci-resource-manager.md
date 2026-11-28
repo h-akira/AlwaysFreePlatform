@@ -1,8 +1,8 @@
 # OCI Resource Manager
 
-Terraform を OCI の側で実行するサービス。Terraform の構成（`.tf` のファイル一式）を **スタック** として預け、plan・apply・destroy を **ジョブ** として実行する。state も Resource Manager が預かるので、手元に state を置かなくてよい。
+Terraform を OCI の側で実行するサービス。Terraform の構成（`.tf` のファイル）を **スタック** として預け、plan・apply・destroy を **ジョブ** として実行する。state も Resource Manager が預かるので、ローカルに state を置かなくてよい。
 
-- **確かめた日**: 2026-11-09・2026-11-15（Oracle の公式文書と、実際にスタックを作って動かした結果）
+- **確かめた日**: 2026-11-09・2026-11-15（Oracle の公式ドキュメントと、実際にスタックを作って動かした結果）
 
 ## 1. 要点
 
@@ -22,15 +22,15 @@ Terraform を OCI の側で実行するサービス。Terraform の構成（`.tf
 
 - スタックの変数は **文字列だけ** を持つ（CLI の `--variables` は、文字列から文字列への対応）。
 - Terraform の側で `list(string)` などの型を宣言した変数に、**JSON の文字列**（例: `["192.0.2.10/32"]`）を渡すと、その型として受け取られた（実測）。
-- `tenancy_ocid`・`region`・`compartment_ocid`・`current_user_ocid` が自動で入るのは、**コンソールでスタックを作る・直す画面だけ**（公式文書）。CLI で作ったスタックには入らず、宣言しただけで値を渡さないと plan が「No value for required variable」で失敗した（実測）。CLI から使うときは、これらも変数として渡す。
+- `tenancy_ocid`・`region`・`compartment_ocid`・`current_user_ocid` が自動で入るのは、**コンソールでスタックを作る・直す画面だけ**（公式ドキュメント）。CLI で作ったスタックには入らず、宣言しただけで値を渡さないと plan が「No value for required variable」で失敗した（実測）。CLI から使うときは、これらも変数として渡す。
 
 ## 4. plan と apply
 
 - apply のジョブには、直前の plan のジョブを指定できる（`--execution-plan-strategy FROM_PLAN_JOB_ID --execution-plan-job-id <plan のジョブ>`）。確かめた plan のとおりに適用される。
 - ジョブのログは、ジョブが終わってから `oci resource-manager job get-job-logs-content` でまとめて取れる。
-- destroy のジョブは `--execution-plan-strategy AUTO_APPROVED` で、plan を挟まずに流せる。
+- destroy のジョブは `--execution-plan-strategy AUTO_APPROVED` で、plan を挟まずに実行できる。
 - かかった時間（実測 2026-11-14・15。VCN・Bastion・MySQL HeatWave の Always Free・VM（A1）・Vault のシークレット・バケットなど 23 個のスタック）: 全部を作る apply が約 17 分（大半は HeatWave）、全部を消す destroy が約 5 分、VM だけを置き換える apply が約 3 分。
-- Terraform の版はスタックごとに指定する。`1.5.x` を指定し、プロバイダ `oracle/oci` v9.12.1・`hashicorp/random` v3.9.1 で動いた（実測）。
+- Terraform のバージョンはスタックごとに指定する。`1.5.x` を指定し、プロバイダ `oracle/oci` v9.12.1・`hashicorp/random` v3.9.1 で動いた（実測）。
 
 ## 5. 出典
 

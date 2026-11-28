@@ -2,16 +2,16 @@
 
 OCI の Always Free を最大限に使い、個人開発の複数のプロジェクトを **少ない VM と1つの DB に相乗り** させる共通基盤。コマンド名は `afp`。
 
-- プロジェクトは決められた約束のファイルを置くだけで載せられる。
-- 各プロジェクトのリポジトリで、版のタグを付けたコミットを `release` ブランチに push すると、ビルドから本番へのデプロイまで自動で行う。
+- プロジェクトは決められた約束のファイルを置くだけでデプロイできる。
+- 各プロジェクトのリポジトリで、バージョンのタグを付けたコミットを `release` ブランチに push すると、ビルドから本番へのデプロイまで自動で行う。
 - VM はステートレス。消えても作り直せば自動で元に戻る。
-- 基盤はプロジェクトの中身を知らないので、プロジェクトは非公開のまま載せられる。
+- 基盤はプロジェクトの中身を知らないので、プロジェクトは非公開のままデプロイできる。
 
-> 開発中。見本のプロジェクト（`examples/hello`）は、`release` ブランチへの push から本番まで動く。DB のダンプは週 1 回取り、アプリのログは OCI Logging に送る（どちらも本番での確かめはこれから）。基盤の監視は、まだ無い。
+> 開発中。サンプルのプロジェクト（`examples/hello`）は、`release` ブランチへの push から本番まで動く。DB のダンプは週 1 回取り、アプリのログは OCI Logging に送る（どちらも本番での確かめはこれから）。基盤の監視は、まだ無い。
 
 ## 文書
 
-基盤を使う人（プロジェクトを載せる人・基盤の管理者）向けの使い方としくみは、[wiki](../../wiki) にある。ここの文書は、基盤そのものを作る人向け。
+基盤を使う人（プロジェクトをデプロイする人・基盤の管理者）向けの使い方としくみは、[wiki](../../wiki) にある。ここの文書は、基盤そのものを作る人向け。
 
 前から順に読む。
 
@@ -20,17 +20,17 @@ OCI の Always Free を最大限に使い、個人開発の複数のプロジェ
 | [01 目的と方針](docs/01_purpose.md) | なぜこの基盤があるのか、何を優先するのか、向く使い方と向かない使い方 |
 | [02 構成と決定](docs/02_architecture.md) | 前提にした無料枠、全体の構成、主な決定 |
 | [03 役割と責任](docs/03_responsibilities.md) | 基盤の管理者とプロジェクトの管理者の分担と境目 |
-| [04 基盤を使う](docs/04_using.md) | プロジェクトの管理者向け。基盤に載せるための約束 |
+| [04 基盤を使う](docs/04_using.md) | プロジェクトの管理者向け。基盤にデプロイするための約束 |
 
 参考資料（それだけで読める独立した資料）:
 
 | 資料 | 内容 |
 |---|---|
 | [OCI の無料枠](docs/references/oci-free-tier.md) | Always Free の枠・制約・アイドル回収（確かめた日付と出典つき） |
-| [MySQL でアプリを書くときの注意](docs/references/mysql-notes.md) | ほかの DB（PostgreSQL など）との違い、日本語の照合順序、HeatWave の版の上がり方 |
-| [OCI Bastion](docs/references/oci-bastion.md) | プライベート・サブネットのリソースに手元から入る方法（ポート転送） |
+| [MySQL でアプリを書くときの注意](docs/references/mysql-notes.md) | ほかの DB（PostgreSQL など）との違い、日本語の照合順序、HeatWave のバージョンの上がり方 |
+| [OCI Bastion](docs/references/oci-bastion.md) | プライベート・サブネットのリソースにローカルから入る方法（ポート転送） |
 | [OCI Resource Manager](docs/references/oci-resource-manager.md) | Terraform を OCI の側で実行するサービスの使い方と癖 |
-| [OCI Vault](docs/references/oci-vault.md) | 鍵とシークレットの削除待ちと、それが削除に与える影響 |
+| [OCI Vault](docs/references/oci-vault.md) | キーとシークレットの削除待ちと、それが削除に与える影響 |
 | [OCI DevOps](docs/references/oci-devops.md) | VM へのデプロイ（インスタンス・グループ・Run Command）の仕組みと制約 |
 | [OCI の Run Command](docs/references/oci-run-command.md) | VM の中のエージェントにコマンドを実行させる仕組み、届くまでの時間と制限 |
 | [OCI の Compute の VM](docs/references/oci-compute-vm.md) | Oracle Linux 9 の小さな VM（E2.1.Micro・A1）で分かったこと（kdump の予約・dnf・firewalld・エージェント） |

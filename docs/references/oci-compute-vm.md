@@ -2,12 +2,12 @@
 
 OCI の公式のイメージ（Oracle Linux 9）で、小さな VM（E2.1.Micro と A1）を作ったときに分かったこと。
 
-- **確かめた日**: 2026-11-13・2026-11-15（実際に VM を作って測った結果と、Oracle の公式文書）
+- **確かめた日**: 2026-11-13・2026-11-15（実際に VM を作って測った結果と、Oracle の公式ドキュメント）
 - 「実測」と書いたものは、イメージ `Oracle-Linux-9.8-2026.10.30-0`（amd64）と `Oracle-Linux-9.8-aarch64-2026.10.30-0`（arm64）で測った。イメージや時期が違えば変わりうる。
 
-## 1. 形（shape）と見えるメモリ
+## 1. シェイプと見えるメモリ
 
-| 形 | CPU の種類 | 実測 |
+| シェイプ | CPU の種類 | 実測 |
 |---|---|---|
 | `VM.Standard.E2.1.Micro`（1/8 OCPU・1 GB） | amd64（AMD EPYC） | OS から見えるメモリは、VM によって 945 MB のことも 1 GB のこともあった（§2 の kdump の予約を左右する） |
 | `VM.Standard.A1.Flex`（1 OCPU・6 GB で作った） | arm64（Ampere） | 5,898 MB。`nproc` は 1 |
@@ -19,7 +19,7 @@ OCI の公式のイメージ（Oracle Linux 9）で、小さな VM（E2.1.Micro 
 
 - Oracle Linux 9 の起動の引数には、既定で `crashkernel=1G-64G:448M,64G-:512M` がある。カーネルが落ちたときの記録（kdump）のために、OS から見えるメモリが 1〜64 GB なら 448 MB を取っておく（x86_64 の場合。arm64 は 2〜8 GB で 256 MB）。範囲の下限より少なければ、何も取らない。
 - E2.1.Micro では、見えるメモリが 1 GB の VM で 448 MB が取られ、使えるのは 498 MB になった。945 MB の VM では取られなかった（実測）。
-- `/etc/kdump.conf` に `auto_reset_crashkernel yes` があり、カーネルを更新すると、この予約は既定の値に戻される（実測で設定を確認。挙動は公式の文書で確かめていない）。
+- `/etc/kdump.conf` に `auto_reset_crashkernel yes` があり、カーネルを更新すると、この予約は既定の値に戻される（実測で設定を確認。挙動は公式のドキュメントで確かめていない）。
 - 予約をやめるには、起動の引数から `crashkernel` を消して（`grubby --update-kernel=ALL --remove-args=crashkernel`）、再起動する。予約されているかは `/sys/kernel/kexec_crash_size`（0 なら無し）で分かる（実測）。
 - 使えるメモリが約 500 MB の状態で再起動すると、停止のときに initramfs を `/run`（メモリの上の tmpfs）に展開するところで `/run` があふれ、停止に約 3 分かかった。止まりはしなかった（実測）。
 - kdump を止めると、コンソールや API から診断の割り込みを送ってクラッシュの記録を取ることはできなくなる。
@@ -41,7 +41,7 @@ OCI の公式のイメージ（Oracle Linux 9）で、小さな VM（E2.1.Micro 
 
 - **firewalld** は既定で動いていて、許しているのは `ssh` と `dhcpv6-client` だけ。それでも、Docker のコンテナが公開したポート（`-p 80:8080` など）には外から届いた（実測）。
 - **VCN の DNS** は、メタデータと同じ `169.254.169.254` の 53 番にある（[DNS in Your Virtual Cloud Network](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/dns.htm)）。Docker の `DOCKER-USER` で「`169.254.169.254` の udp/tcp 53 は通す → `169.254.0.0/16` は落とす」とすると、コンテナから名前は引けて、メタデータには届かなかった（実測）。
-- メタデータの v2 の口（`http://169.254.169.254/opc/v2/`）は、ヘッダ `Authorization: Bearer Oracle` が要る。古い v1 の口は、インスタンスの設定（`are_legacy_imds_endpoints_disabled`）で止められる。
+- メタデータの v2 のエンドポイント（`http://169.254.169.254/opc/v2/`）は、ヘッダ `Authorization: Bearer Oracle` が要る。古い v1 のエンドポイントは、インスタンスの設定（`are_legacy_imds_endpoints_disabled`）で止められる。
 - 公開 IP を付けない VM で作り、あとから予約済みの公開 IP を付けると、付くまでの間（作ってから 1 分ほど）は外へ出られない（実測。インターネット・ゲートウェイの経路だけで、NAT ゲートウェイは無い構成）。
 
 ## 5. Oracle Cloud Agent のプラグイン
@@ -55,11 +55,11 @@ OCI の公式のイメージ（Oracle Linux 9）で、小さな VM（E2.1.Micro 
 | Compute Instance Run Command | 指定して有効にした（[oci-run-command.md](oci-run-command.md)） |
 | Vulnerability Scanning・OS Management Hub Agent・Management Agent・Bastion・Block Volume Management など | 止まっている |
 
-- プラグインの有効・無効を変えてから効くまで、最大 10 分（公式文書）。
+- プラグインの有効・無効を変えてから効くまで、最大 10 分（公式ドキュメント）。
 
 ## 6. A1 の空き
 
-- 「容量の報告」（Compute Capacity Report。`oci compute compute-capacity-report create`）で、指定した形と大きさの VM をいまその可用性ドメインに作れるかを、何も作らずに問い合わせられる。結果は `AVAILABLE` など。その時点の様子で、作れることを約束はしない。
+- 「容量の報告」（Compute Capacity Report。`oci compute compute-capacity-report create`）で、指定したシェイプと大きさの VM をいまその可用性ドメインに作れるかを、何も作らずに問い合わせられる。結果は `AVAILABLE` など。その時点の様子で、作れることを約束はしない。
 - 2026-11-13 には、A1 の 1・2・4 OCPU のどれも `AVAILABLE` で、1 OCPU・6 GB の VM が 35 秒で `RUNNING` になった（実測）。2026-11-14・15 にも、1 OCPU・6 GB の A1 を 2 回作り直せた（実測）。A1 は、時期によっては "Out of host capacity" で作れない（[oci-free-tier.md](oci-free-tier.md) §2）。
 - A1 では、アイドル回収の条件にメモリの使用率も加わる（[oci-free-tier.md](oci-free-tier.md) §5）。
 

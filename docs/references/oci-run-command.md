@@ -2,7 +2,7 @@
 
 VM の中の Oracle Cloud Agent（OCI のイメージに入っているエージェント）の Run Command のプラグインに、コマンドを実行させる仕組み。AWS の SSM の Run Command に当たる。OCI DevOps のインスタンス・グループへのデプロイも、これを使う（[oci-devops.md](oci-devops.md)）。
 
-- **確かめた日**: 2026-11-13・2026-11-14（Oracle の公式文書と、CLI から実際に呼んだ結果）
+- **確かめた日**: 2026-11-13・2026-11-14（Oracle の公式ドキュメントと、CLI から実際に呼んだ結果）
 
 ## 1. 呼び方
 
@@ -10,7 +10,7 @@ VM の中の Oracle Cloud Agent（OCI のイメージに入っているエージ
 oci instance-agent command create --compartment-id <コンパートメント> \
   --target '{"instanceId":"<VM の OCID>"}' --timeout-in-seconds 900 \
   --content '{"source":{"sourceType":"TEXT","text":"<スクリプト>"},"output":{"outputType":"TEXT"}}'
-oci instance-agent command-execution get --command-id <命令の OCID> --instance-id <VM の OCID>
+oci instance-agent command-execution get --command-id <コマンドの OCID> --instance-id <VM の OCID>
 ```
 
 - 結果の `lifecycle-state` は、成功で `SUCCEEDED`、終了コードが 0 でなければ `FAILED`。`content.exit-code` に終了コード、`content.text` に出力が入る（`exit 3` で `FAILED`・exit-code 3 になった。実測）。
@@ -19,18 +19,18 @@ oci instance-agent command-execution get --command-id <命令の OCID> --instanc
 ## 2. VM の側
 
 - コマンドは `ocarun` というユーザで動く（実測）。root で動かすものは、`/etc/sudoers.d/` で `ocarun` に許す。許していないコマンドの `sudo` は断られた（実測）。
-- VM（の dynamic group）に、命令を受ける権限が要る:
+- VM（の dynamic group）に、コマンドを受ける権限が要る:
   `Allow dynamic-group <名前> to use instance-agent-command-execution-family in compartment <名前> where request.instance.id = target.instance.id`
-- VM を作った直後に送った命令は、初めての起動の設定（`/etc/sudoers.d/` の許可を置く段）が済む前に実行され、`sudo: a password is required` で `FAILED` になった（2026-11-14 実測。作り直した A1 で、作り終えた直後に送った）。起動の設定が終わる前でも、エージェントは命令を受け取る。
+- VM を作った直後に送ったコマンドは、初めての起動の設定（`/etc/sudoers.d/` の許可を置く段）が済む前に実行され、`sudo: a password is required` で `FAILED` になった（2026-11-14 実測。作り直した A1 で、作り終えた直後に送った）。起動の設定が終わる前でも、エージェントはコマンドを受け取る。
 - 許可が置かれたかは、実行せずに `sudo -n -l <コマンド>` で確かめられる。許可のあるコマンドで 0、無いコマンドで 1 を返し、パスワードを聞かない（2026-11-15 実測）。
-- dynamic group を先に作ってから VM を作ると、VM はすぐに命令を取りに来る。VM を作ってから dynamic group に入れると、取りに来るまで最大 30 分かかる（公式文書）。
+- dynamic group を先に作ってから VM を作ると、VM はすぐにコマンドを取りに来る。VM を作ってから dynamic group に入れると、取りに来るまで最大 30 分かかる（公式ドキュメント）。
 
 ## 3. 届くまでの時間
 
-- プラグインは、**決まった間隔で命令を取りに来る**。間隔は VM の中の `/etc/oracle-cloud-agent/plugins/runcommand/config.yml` の `pollCommandInterval` で、既定は `'4m'`（実測）。プラグインのログ（`/var/log/oracle-cloud-agent/plugins/runcommand/runcommand.log`）でも、取りに来て実行したあと、次を約 3.5〜4 分後に決めていた。公式文書には、この間隔の記述が無い。
+- プラグインは、**決まった間隔でコマンドを取りに来る**。間隔は VM の中の `/etc/oracle-cloud-agent/plugins/runcommand/config.yml` の `pollCommandInterval` で、既定は `'4m'`（実測）。プラグインのログ（`/var/log/oracle-cloud-agent/plugins/runcommand/runcommand.log`）でも、取りに来て実行したあと、次を約 3.5〜4 分後に決めていた。公式ドキュメントには、この間隔の記述が無い。
 - そのため、送ってから結果が返るまで、中身が数秒のコマンドでも 176〜268 秒かかった（E2.1.Micro・A1 とも。実測）。
 
-## 4. 制限（公式文書）
+## 4. 制限（公式ドキュメント）
 
 | 項目 | 値 |
 |---|---|
@@ -44,7 +44,7 @@ oci instance-agent command-execution get --command-id <命令の OCID> --instanc
 
 ## 5. 返る出力の切れ方（実測）
 
-- 2026-11-14、1 KB を超えて出力するスクリプトを送ると、`content.text` には **出力の最初の約 1 KB** が入り、最後の側が切れていた（A1・Oracle Linux 9）。§4 の公式文書（最後の 1 KB）と食い違う。
+- 2026-11-14、1 KB を超えて出力するスクリプトを送ると、`content.text` には **出力の最初の約 1 KB** が入り、最後の側が切れていた（A1・Oracle Linux 9）。§4 の公式ドキュメント（最後の 1 KB）と食い違う。
 - 終了コード（`content.exit-code`）は、出力が切れても正しく返った。
 - 結果を出力の最後に書くスクリプトでは、結果が見えなくなる。送るスクリプトを包んで、最後の部分だけを出力させれば、どちらの側で切れても残る:
   ```sh
