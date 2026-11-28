@@ -50,8 +50,8 @@ def test_values_go_through_the_environment(tmp_path: Path) -> None:
         "EXAMPLE_API_KEY": EXAMPLE_API_KEY,  # made by hand; quotes and $ pass as they are
         "EXAMPLE_SETTING": EXAMPLE_SETTING,  # a setting from env, not a secret
     }
-    # Started without waiting for health checks (ADR 036).
-    assert "--no-build" in up["args"] and not any(a.startswith("--wait") for a in up["args"])
+    # A deploy waits for the containers with a healthcheck to be healthy (ADR 048).
+    assert up["args"][-7:] == ["up", "-d", "--no-build", "--remove-orphans", "--wait", "--wait-timeout", "300"]
     for call in world.calls:
         joined = " ".join(call["args"])
         assert DB_PASSWORD not in joined and EXAMPLE_API_KEY not in joined and EXAMPLE_SIGNING_KEY not in joined
@@ -154,6 +154,24 @@ def test_sync_starts_what_should_run_and_stops_what_is_gone(tmp_path: Path) -> N
     assert world.running == {"hello": "v1"}
     # Nothing to do the second time.
     assert cli.cmd_sync(make_ctx(tmp_path, world), argparse.Namespace()).endswith("Caddyfile unchanged")
+
+
+def test_only_a_deploy_waits_for_health(tmp_path: Path) -> None:
+    # Starting after a reboot does not wait: a project that never gets
+    # healthy must not hold up Caddy and the others (ADR 048).
+    world = World()
+    deploy(world, tmp_path, "hello", "v1")
+    world.running = {}
+    world.calls.clear()
+    cli.cmd_sync(make_ctx(tmp_path, world), argparse.Namespace())
+    [up] = [c for c in world.calls if c["args"][:2] == ["docker", "compose"] and "up" in c["args"] and "hello" in c["args"]]
+    assert not any(a.startswith("--wait") for a in up["args"])
+    # A rollback is a deploy: it waits.
+    deploy(world, tmp_path, "hello", "v2")
+    world.calls.clear()
+    cli.cmd_rollback(make_ctx(tmp_path, world), argparse.Namespace(project="hello"))
+    [up] = [c for c in world.calls if c["args"][:2] == ["docker", "compose"] and "up" in c["args"]]
+    assert "--wait" in up["args"]
 
 
 def test_sync_reports_a_project_that_cannot_start(tmp_path: Path) -> None:

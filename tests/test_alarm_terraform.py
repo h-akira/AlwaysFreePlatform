@@ -40,8 +40,9 @@ def test_the_nlb_alarm_watches_its_health_checks_for_5_minutes() -> None:
     assert 'pending_duration      = "PT5M"' in alarm
 
 
-def test_the_hourly_metrics_are_read_over_an_hour() -> None:
-    # A [1m] window would see an hourly data point for one minute only.
+def test_the_metrics_of_afp_are_read_over_an_hour() -> None:
+    # A [1m] window would see an hourly or weekly data point for one minute only.
+    assert 'query                 = "backup_ok[1h].min() < 1"' in _alarm("backup")
     db = _alarm("check_db")
     assert 'display_name          = "alarm-afp-check-db"' in db
     assert f'query                 = "{checks.CHECK_DB_METRIC}[1h].min() < 1"' in db

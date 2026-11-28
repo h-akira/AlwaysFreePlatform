@@ -9,9 +9,9 @@
 # - alarm-afp-vm-memory: the VM is short of memory (Oracle Cloud Agent).
 # - alarm-afp-vm-disk: the VM's disk is nearly full (afp check-disk, every hour).
 #
-# The hourly metrics are read over [1h], as long as they are posted apart: a
-# 0 (or a full disk) keeps the alarm firing until the next hour's data point
-# is fine. An hourly check that stops running sends nothing and is not
+# The metrics that afp sends (hourly or weekly) are read over [1h], as long
+# as the hourly ones are posted apart: a 0 (or a full disk) keeps the alarm
+# firing for an hour, or until the next hour's data point is fine. An hourly check that stops running sends nothing and is not
 # noticed here; a VM that is down is noticed by alarm-afp-nlb-unhealthy.
 
 variable "compartment_id" {
@@ -45,7 +45,7 @@ resource "oci_monitoring_alarm" "backup" {
   display_name          = "alarm-afp-backup"
   is_enabled            = true
   namespace             = "afp"
-  query                 = "backup_ok[1m].min() < 1"
+  query                 = "backup_ok[1h].min() < 1"
   severity              = "ERROR"
   destinations          = [var.topic_id]
   body                  = <<-EOT

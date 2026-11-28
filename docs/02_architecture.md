@@ -111,7 +111,7 @@ VM の中には失って困るものを置かない。
 | アプリのデータ | MySQL HeatWave |
 | シークレット | OCI Vault |
 | どのプロジェクトをどのドメインで動かすか | `bucket-afp-deploy`（Terraform が書く） |
-| 各プロジェクトの今のバージョン | `bucket-afp-deploy`（デプロイが成功したら `afp` が書く） |
+| 各プロジェクトの今のバージョン | `bucket-afp-deploy`（デプロイのたびに、コンテナを起動する前に `afp` が書く） |
 | イメージ | OCIR |
 | リリースのファイル | `bucket-afp-deploy`（デプロイがバージョンごとに置く） |
 | 基盤のコード | `bucket-afp-deploy` の `platform.tar.gz`（管理者のローカルのコードを、そのまま `make platform` が置く。§5.6） |

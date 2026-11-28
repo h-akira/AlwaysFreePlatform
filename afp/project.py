@@ -36,6 +36,8 @@ TAG = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 CADDY_PROJECT = "afp-caddy"
 # Build cache older than this is removed after each build on the VM.
 BUILD_CACHE_KEEP = "168h"
+# How long a deploy waits for the containers to be healthy (ADR 048).
+WAIT_TIMEOUT = 300
 
 
 def check_tag(tag: str) -> None:
@@ -215,15 +217,20 @@ class Projects:
         args = ["docker", "compose", "-p", p.name]
         return args + (["-f", str(path)] if path is not None else [])
 
-    def up(self, p: Project, tag: str, secrets: dict[str, str]) -> None:
-        """Pull and start tag (docker compose up -d). Health checks are not
-        waited for: the platform does not look at them (ADR 036)."""
+    def up(self, p: Project, tag: str, secrets: dict[str, str], wait: bool = False) -> None:
+        """Pull and start tag (docker compose up -d).
+
+        With wait (a deploy, ADR 048), compose waits until every container
+        with a healthcheck is healthy and every other one is running; an
+        unhealthy container, or WAIT_TIMEOUT seconds, fails it. The containers
+        are left as they are either way."""
         path = self.fetch_release(p, tag)
         env = compose_env(self.cfg, p, tag, secrets)
         self.login()
         self.ctx.runner.run([*self._compose(p, path), "pull", "-q"], env=env)
+        waiting = ["--wait", "--wait-timeout", str(WAIT_TIMEOUT)] if wait else []
         self.ctx.runner.run(
-            [*self._compose(p, path), "up", "-d", "--no-build", "--remove-orphans"],
+            [*self._compose(p, path), "up", "-d", "--no-build", "--remove-orphans", *waiting],
             env=env,
         )
 
@@ -329,8 +336,9 @@ class Projects:
         """Deploy tag. With build, a release that has the tag's source is built
         first; a failed build changes nothing on the VM. The state records tag
         before it is started, so that it always matches what runs: when the
-        containers cannot be started, the failure is reported, nothing is
-        rolled back, and make rollback goes back to the version before (ADR 036)."""
+        containers cannot be started or do not become healthy, the failure is
+        reported, nothing is rolled back, and make rollback goes back to the
+        version before (ADR 036, ADR 048)."""
         check_tag(tag)
         state = self.read_state(p)
         self.fetch_release(p, tag)  # fail before anything else if it is missing
@@ -343,7 +351,7 @@ class Projects:
         new = next_state(state, tag)
         self.write_state(p, new)
         try:
-            self.up(p, tag, secrets)
+            self.up(p, tag, secrets, wait=True)
         except AfpError as e:
             raise AfpError(f"deploy of {p.name} {tag} failed: {e} -- not rolled back") from e
         return f"{p.name} is now {tag} (previous: {new['previous'] or 'none'}); dump before it: {dump}"
