@@ -37,6 +37,14 @@ def test_the_agent_tails_the_docker_logs_as_json_into_the_log() -> None:
     assert "log_object_id = oci_logging_log.apps.id" in agent
 
 
+def test_the_agent_reads_dockers_time_as_a_string() -> None:
+    # Read as a float (the JSON parser's default), "2026-11-27T..." is 2026
+    # seconds after 1970 and the entries cannot be found by a search.
+    agent = _block(LOGGING_TF, 'resource "oci_logging_unified_agent_configuration" "apps"')
+    assert 'time_type   = "STRING"' in agent
+    assert 'time_format = "%Y-%m-%dT%H:%M:%S.%N%z"' in agent
+
+
 def test_the_agent_runs_on_the_vms_dynamic_group() -> None:
     agent = _block(LOGGING_TF, 'resource "oci_logging_unified_agent_configuration" "apps"')
     assert "group_list = [var.dynamic_group_id]" in agent
@@ -46,3 +54,13 @@ def test_the_agent_runs_on_the_vms_dynamic_group() -> None:
 def test_the_ids_are_outputs() -> None:
     for name, value in [("log_group_id", "oci_logging_log_group.apps.id"), ("log_id", "oci_logging_log.apps.id")]:
         assert f"value = {value}" in _block(LOGGING_TF, f'output "{name}"')
+
+
+POLICIES_TF = (ROOT / "terraform" / "modules" / "policies" / "main.tf").read_text()
+
+
+def test_the_vms_may_use_log_content_without_a_log_group_condition() -> None:
+    # Fetching the agent configuration targets no log group, so a
+    # target.loggroup.id condition made it fail with 404 NotAuthorizedOrNotFound.
+    [line] = [s for s in POLICIES_TF.splitlines() if "use log-content" in s]
+    assert line.strip() == '"Allow dynamic-group ${local.dg} to use log-content in compartment ${local.c}",'

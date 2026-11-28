@@ -64,9 +64,9 @@ def load_config(ctx: Context) -> config.Config:
 
 def cmd_install(ctx: Context, args: argparse.Namespace) -> str:
     """The VM-wide pieces the projects and Caddy rely on. Idempotent."""
-    # The bootstrap writes daemon.json without the labels and restarts Docker
-    # before this runs, so a change takes a restart; afp sync, which follows,
-    # starts Caddy and the projects again.
+    # Only afp writes daemon.json. Docker reads it only at start, so a change
+    # takes a restart (once on a new VM); afp sync, which follows, starts
+    # Caddy and the projects again.
     if docker_config.write_daemon_json(ctx.paths.docker_daemon_json):
         ctx.runner.run(["systemctl", "restart", "docker.service", "afp-metadata-block.service"])
     if ctx.runner.run(["docker", "network", "inspect", NETWORK], check=False, quiet=True).returncode != 0:

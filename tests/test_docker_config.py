@@ -1,8 +1,7 @@
-"""Docker's daemon.json written by afp: the bootstrap's log settings plus the
-compose labels, written only when it differs."""
+"""Docker's daemon.json written by afp: rotated json-file logs with the compose
+labels, written only when it differs. Only afp writes it."""
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -15,18 +14,18 @@ BOOTSTRAP = (ROOT / "terraform" / "modules" / "compute" / "afp-bootstrap.sh").re
 LABELS = "com.docker.compose.project,com.docker.compose.service"
 
 
-def _bootstrap_daemon_json() -> dict:
-    [body] = re.findall(r"put_file /etc/docker/daemon\.json 0644 <<'EOF'\n(.*?)\nEOF\n", BOOTSTRAP, re.S)
-    return json.loads(body)
-
-
-def test_it_is_the_bootstrap_settings_plus_the_compose_labels() -> None:
+def test_it_is_rotated_json_file_logs_with_the_compose_labels() -> None:
     written = json.loads(docker_config.render())
-    expected = _bootstrap_daemon_json()
-    expected["log-opts"]["labels"] = LABELS
-    assert written == expected
-    assert written["log-driver"] == "json-file"
-    assert written["log-opts"] == {"max-size": "10m", "max-file": "3", "labels": LABELS}
+    assert written == {
+        "log-driver": "json-file",
+        "log-opts": {"max-size": "10m", "max-file": "3", "labels": LABELS},
+    }
+
+
+def test_the_bootstrap_does_not_write_it() -> None:
+    # Two writers made Docker restart twice on every boot.
+    assert "put_file /etc/docker/daemon.json" not in BOOTSTRAP
+    assert "restart docker" not in BOOTSTRAP
 
 
 def test_it_writes_only_when_it_differs(tmp_path: Path) -> None:
@@ -39,9 +38,10 @@ def test_it_writes_only_when_it_differs(tmp_path: Path) -> None:
     assert path.stat().st_mtime_ns == mtime
 
 
-def test_it_replaces_what_the_bootstrap_wrote(tmp_path: Path) -> None:
+def test_it_replaces_an_older_file(tmp_path: Path) -> None:
+    # The VMs started before this change have the bootstrap's file without labels.
     path = tmp_path / "daemon.json"
-    path.write_text(json.dumps(_bootstrap_daemon_json()))
+    path.write_text(json.dumps({"log-driver": "json-file", "log-opts": {"max-size": "10m", "max-file": "3"}}))
     assert docker_config.write_daemon_json(path) is True
     assert json.loads(path.read_text())["log-opts"]["labels"] == LABELS
     assert docker_config.write_daemon_json(path) is False

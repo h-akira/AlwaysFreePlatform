@@ -105,15 +105,7 @@ if ! rpm -q python39-oci-cli > /dev/null 2>&1; then
   log "installing the OCI CLI"
   dnf_ ol9_oci_included,ol9_baseos_latest,ol9_appstream python39-oci-cli
 fi
-
-mkdir -p /etc/docker
-daemon_changed="$(put_file /etc/docker/daemon.json 0644 <<'EOF'
-{
-  "log-driver": "json-file",
-  "log-opts": {"max-size": "10m", "max-file": "3"}
-}
-EOF
-)"
+# Docker's daemon.json (log settings) is written by afp install in step 6.
 
 # 4. Containers must not reach 169.254.169.254 (instance principal tokens),
 # except port 53 on the same address, which is the VCN's DNS resolver.
@@ -149,9 +141,6 @@ EOF
 )"
 [[ -z "$unit_changed" ]] || systemctl daemon-reload
 systemctl enable docker.service afp-metadata-block.service > /dev/null 2>&1
-if [[ -n "$daemon_changed" ]] && systemctl is-active --quiet docker; then
-  systemctl restart docker
-fi
 systemctl start docker.service afp-metadata-block.service
 
 # 5. Run Command runs as ocarun; it may run exactly these as root.

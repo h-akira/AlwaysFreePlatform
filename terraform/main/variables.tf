@@ -97,7 +97,7 @@ variable "vm_generation" {
 }
 
 variable "notification_email" {
-  description = "Email address that receives the DevOps build and deployment notifications. OCI sends it a mail to confirm the subscription."
+  description = "Email address that receives the DevOps build and deployment notifications and the backup alarm. OCI sends it a mail to confirm the subscription."
   type        = string
 
   validation {

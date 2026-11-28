@@ -26,11 +26,6 @@ variable "write_only_bucket_names" {
   type = list(string)
 }
 
-# The log group the VMs' logging agent sends the projects' logs to.
-variable "log_group_id" {
-  type = string
-}
-
 # Every instance in the compartment acts as the platform's VM.
 resource "oci_identity_dynamic_group" "vm" {
   compartment_id = var.tenancy_ocid
@@ -67,8 +62,10 @@ resource "oci_identity_policy" "vm" {
       "Allow dynamic-group ${local.dg} to use instance-agent-command-execution-family in compartment ${local.c} where request.instance.id = target.instance.id",
       # afp backup sends its result (afp/backup_ok) for the alarm.
       "Allow dynamic-group ${local.dg} to use metrics in compartment ${local.c} where target.metrics.namespace = 'afp'",
-      # The logging agent sends the projects' container logs.
-      "Allow dynamic-group ${local.dg} to use log-content in compartment ${local.c} where target.loggroup.id = '${var.log_group_id}'",
+      # The logging agent fetches its configuration and sends the projects'
+      # container logs. No log group condition: fetching the configuration
+      # targets no log group, so such a condition denies it (404).
+      "Allow dynamic-group ${local.dg} to use log-content in compartment ${local.c}",
     ],
   )
 }

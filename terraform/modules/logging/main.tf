@@ -40,12 +40,15 @@ resource "oci_logging_unified_agent_configuration" "apps" {
       source_type = "LOG_TAIL"
       paths       = ["/var/lib/docker/containers/*/*-json.log"]
 
-      # Each line is {"log": ..., "stream": ..., "attrs": {...}, "time": ...}.
-      # The time of the event is when the agent reads it: Docker writes
-      # "time" in RFC 3339 with a varying number of fraction digits, which
-      # one fixed time_format does not always match.
+      # Each line is {"log": ..., "stream": ..., "attrs": {...}, "time": ...};
+      # "time" (RFC 3339, UTC, 1 to 9 fraction digits) becomes the event time.
+      # Without time_type the JSON parser reads it as a float (2026 seconds,
+      # i.e. 1970), and such entries never show up in a search. %N takes any
+      # number of digits and %z takes "Z" (tried with the agent's fluentd).
       parser {
         parser_type = "JSON"
+        time_type   = "STRING"
+        time_format = "%Y-%m-%dT%H:%M:%S.%N%z"
       }
     }
 

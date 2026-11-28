@@ -168,7 +168,6 @@ module "policies" {
   region                  = var.region
   deploy_bucket_name      = local.deploy_bucket_name
   write_only_bucket_names = [local.dumps_bucket_name, local.logs_bucket_name]
-  log_group_id            = module.logging.log_group_id
 }
 
 # The projects' container logs, sent by the VM's logging agent.
