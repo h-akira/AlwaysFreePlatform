@@ -27,8 +27,8 @@ Always Free の枠は、VM や DB の **個数** で決まっている。アプ�
 2. サンプルのプロジェクト `afp-example-hello`（このリポジトリと同じ持ち主の、別のリポジトリ）をデプロイして、一通りを確かめる。
 3. 自分のアプリに `compose.afp.yaml` を用意して、デプロイする。
 
-> 開発中。週 1 回の DB のダンプの timer は、本番でまだ回っていない。
+## リンク
 
-## 開発する人へ
-
-基盤そのものを作る人向けの文書は [docs/](docs/README.md) にある。
+- [wiki](../../wiki)（使い方）
+- [afp-example-hello](../../../afp-example-hello)（サンプルのプロジェクト）
+- [docs/](docs/README.md)（設計の文書）
