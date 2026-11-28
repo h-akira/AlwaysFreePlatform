@@ -117,12 +117,3 @@ def test_needs_compose_afp_yaml(env: dict[str, str], tmp_path: Path) -> None:
     result = run(env)
     assert result.returncode == 1
     assert "compose.afp.yaml" in result.stderr
-
-
-def test_example_build_spec_calls_the_script() -> None:
-    text = (ROOT / "examples" / "hello" / "build_spec.yaml").read_text()
-    assert "exportedVariables:\n    - AFP_TAG" in text
-    assert 'AFP_TAG="$(/tmp/afp-platform/scripts/devops-release.sh)"' in text
-    # The platform code comes from the bucket, not from GitHub (ADR 038).
-    assert "--name platform.tar.gz" in text
-    assert "platform.json" not in text and "platform_repository" not in text and "curl" not in text

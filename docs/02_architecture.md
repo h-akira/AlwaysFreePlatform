@@ -61,8 +61,8 @@ flowchart TB
   bep -. "MySQL" .-> mysql
   vault["OCI Vault"] -. "シークレット" .-> afp
   os[("Object Storage<br/>一覧・今のバージョン・ダンプ・操作のログ")] -. "読み書き" .-> afp
-  afp -. "基盤のヘルスチェック（1 時間ごと。未実装）" .-> mysql
-  afp -. "ダンプの成否・ヘルスチェックの結果" .-> mon["OCI Monitoring<br/>アラーム → メール"]
+  afp -. "afp check-db（1 時間ごと）" .-> mysql
+  afp -. "ダンプの成否・DB とディスクの確かめの結果" .-> mon["OCI Monitoring<br/>アラーム → メール"]
   a & b -. "標準出力（エージェントが送る）" .-> logging[("OCI Logging<br/>アプリのログ")]
 ```
 
@@ -221,7 +221,7 @@ OCI DevOps のうち、共有するものとプロジェクトごとのものは
 
 ### 5.7 基盤の監視
 
-基盤の管理者が知りたいことを、OCI Monitoring のアラームで見る（[ADR 047](adr/047_platform-monitoring-from-what-the-admin-wants-to-know.md)）。送り先は、どれもデプロイの成否と同じ通知のトピック（`topic-afp-devops`）。
+基盤の管理者が知りたいことを、OCI Monitoring のアラームで見る。送り先は、どれもデプロイの成否と同じ通知のトピック（`topic-afp-devops`）。
 
 | 知りたいこと | アラーム | 見るもの | 鳴るとき |
 |---|---|---|---|

@@ -190,16 +190,6 @@ def test_next_state() -> None:
     assert pm.next_state({"current": "v2", "previous": "v1"}, "v2") == {"current": "v2", "previous": "v1"}
 
 
-def test_example_follows_the_contract() -> None:
-    """examples/hello/compose.afp.yaml keeps the four promises of docs/04_using.md §2."""
-    root = Path(__file__).resolve().parent.parent
-    text = (root / "examples" / "hello" / "compose.afp.yaml").read_text()
-    assert "image: ${AFP_IMAGE_PREFIX}/web:${AFP_TAG}" in text
-    assert 'aliases: ["${AFP_PROJECT}"]' in text and "external: true" in text
-    assert "healthcheck:" in text and "mem_limit:" in text
-    assert "8080" in (root / "examples" / "hello" / "app.py").read_text()
-
-
 # --- building on the VM (ADR 026) ----------------------------------------------
 
 

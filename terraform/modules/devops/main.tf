@@ -249,7 +249,7 @@ resource "oci_devops_build_pipeline" "project" {
   }
 }
 
-# Runs the project's build_spec.yaml (from the template in examples/hello). The
+# Runs the project's build_spec.yaml (from the template in the sample repository afp-example-hello). The
 # runner is x86_64 and cannot emulate arm64, so it only puts the tag's source
 # and compose.afp.yaml into the bucket; the VM builds (ADR 026).
 resource "oci_devops_build_pipeline_stage" "build" {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release a project's tag from the OCI DevOps build stage (ADR 026).
 #
-# Called by the project's build_spec.yaml (template: examples/hello). The build
+# Called by the project's build_spec.yaml (template: the sample repository afp-example-hello). The build
 # runner is x86_64 and cannot emulate arm64, so this does not build: it puts
 # the tag's source and compose.afp.yaml into the bucket, and the VM builds
 # them in afp deploy.
