@@ -171,6 +171,7 @@ cmd_apply() {
   [[ -n "$stack_id" && "$stack_id" != "null" ]] || die "stack not found; run 'make ${MAKE_PREFIX}plan' first"
 
   # Latest job of the stack must be a successful plan of the code as it is now.
+  # shellcheck disable=SC2016 # the backticks are a JMESPath literal, not a command substitution
   plan="$(oci_ resource-manager job list --stack-id "$stack_id" \
     --sort-by TIMECREATED --sort-order DESC --limit 1 \
     --query 'data[0].[id, operation, "lifecycle-state", "display-name"] | join(`" "`, @)' \
