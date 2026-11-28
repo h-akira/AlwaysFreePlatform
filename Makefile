@@ -74,7 +74,7 @@ lint: ## Check formatting and validate terraform/; shellcheck if installed
 	  terraform -chdir=$(ROOT)/terraform/$$d init -backend=false -input=false > /dev/null && \
 	  terraform -chdir=$(ROOT)/terraform/$$d validate || exit 1; \
 	done
-	@if command -v shellcheck > /dev/null; then shellcheck -x $(ROOT)/scripts/*.sh; \
+	@if command -v shellcheck > /dev/null; then shellcheck -x $(ROOT)/scripts/*.sh $(ROOT)/terraform/modules/compute/afp-bootstrap.sh; \
 	else echo "shellcheck not installed; skipped"; fi
 
 test: ## Run unit tests
