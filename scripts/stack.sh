@@ -45,7 +45,8 @@ usage() { sed -n '2,/^[^#]/p' "$0" | sed '$d' >&2; exit 2; }
 case "${1:-}" in
   base)
     STACK_NAME="stack-afp-base"; WORKDIR="base"; MAKE_PREFIX="base-"
-    VARIABLE_KEYS="tenancy_ocid,region,dns_zone"
+    # A trailing "?" marks a key that may be left out (rm_values.py variables).
+    VARIABLE_KEYS="tenancy_ocid,region,dns_zone,notification_email,budget_amount?"
     ;;
   main)
     STACK_NAME="stack-afp-main"; WORKDIR="main"; MAKE_PREFIX=""

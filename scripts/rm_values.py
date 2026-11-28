@@ -5,7 +5,8 @@ Subcommands:
   variables TFVARS_JSON [KEYS]
                              Print Resource Manager stack variables as JSON.
                              KEYS (comma separated) limits them to those keys,
-                             which must all be set. Without KEYS (the main
+                             which must all be set, except those ending in "?"
+                             (passed only when set). Without KEYS (the main
                              stack), all of them.
   get TFVARS_JSON KEY        Print one top-level value from the tfvars file.
   outputs                    Read a Terraform state from stdin and print
@@ -57,11 +58,14 @@ def to_rm_variables(tfvars: dict[str, Any]) -> dict[str, str]:
 
 
 def select_keys(tfvars: dict[str, Any], keys: list[str]) -> dict[str, Any]:
-    """Keep only the given keys; each must be present."""
-    missing = [key for key in keys if key not in tfvars]
+    """Keep only the given keys; each must be present, except optional ones
+    written with a trailing "?" (e.g. "budget_amount?"), kept only if present."""
+    required = [key for key in keys if not key.endswith("?")]
+    missing = [key for key in required if key not in tfvars]
     if missing:
         raise ValueError(f"not set: {', '.join(missing)}")
-    return {key: tfvars[key] for key in keys}
+    names = [key[:-1] if key.endswith("?") else key for key in keys]
+    return {key: tfvars[key] for key in names if key in tfvars}
 
 
 def state_outputs(state: dict[str, Any]) -> dict[str, str]:

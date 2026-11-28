@@ -2,7 +2,7 @@
 
 OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 
-- **確かめた日**: 2026-11-07（Oracle の公式ドキュメント）。予約済みの公開 IP・Cloud Guard・アイドル回収は 2026-11-13。MySQL HeatWave の管理者のパスワードの特殊文字は 2026-11-22。DNS は 2026-11-23。Network Load Balancer・NAT ゲートウェイ・サービス・ゲートウェイは 2026-11-25。Logging と、MySQL HeatWave の有料の種類の単価は 2026-11-26
+- **確かめた日**: 2026-11-07（Oracle の公式ドキュメント）。予約済みの公開 IP・Cloud Guard・アイドル回収は 2026-11-13。MySQL HeatWave の管理者のパスワードの特殊文字は 2026-11-22。DNS は 2026-11-23。Network Load Balancer・NAT ゲートウェイ・サービス・ゲートウェイは 2026-11-25。Logging と、MySQL HeatWave の有料の種類の単価は 2026-11-26。Budgets は 2026-11-29
 - **無料枠は変わる**（2026-06 に A1 の枠が半分になった）。使う前に §6 の出典で確かめ直す。
 - **実際の費用**: 2026-11-28 に、基盤の管理者がコンソールで見て 1 円未満だった（NLB・NAT ゲートウェイ・サービス・ゲートウェイ・Logging・ダンプとログのバケットを入れた構成、hello だけを動かした状態）。
 
@@ -44,6 +44,7 @@ OCI（Oracle Cloud Infrastructure）の無料枠を調べた結果。
 - **Network Load Balancer**: 公式ドキュメントの概要に「Network load balancers are Always Free tier.」とある。帯域の設定は無く、通信に合わせて広がる（「Capable of scaling beyond 8 Gbps.」）。価格の API に品目が無い。テナンシの上限（`max-nlb-flexible-count`）はリージョンあたり 10 だった（2026-11-25 実測。テナンシによって違いうる）。
 - **NAT ゲートウェイ・サービス・ゲートウェイ**: 価格の API に品目が無い。料金のページは読めず、無料かは公式の料金の記述で確かめていない（2026-11-25）。NAT ゲートウェイの上限（`nat-gateway-count`）は 1 だった（2026-11-25 実測）。
 - **Logging**: 価格の API では、品目は「OCI - Logging - Storage」（B92593）の 1 つだけで、**月 10 GB まで 0 円**、超えた分は 1 GB・月あたり 0.05 USD（7.75 円）。PAYG の品目そのものに 10 GB までの無料の段が付いている。1 回の送信ごとに付帯の情報（最低 500 バイト）が加わり、量に数えられる。取り込みと検索に料金がかかるかは、docs.oracle.com で確かめられなかった（未確認。価格の API に品目は無い）。保存の日数は 30 日刻みで最大 180 日（2026-11-26）。
+- **Budgets**（予算とアラートのルール）: 価格の API（668 品目）に品目が無い。予算の説明のページにも、料金と、無料のテナンシで使えないことの記述は無い。無料と明記した公式の記述は見つけられなかった（未確認）。予算は、何を見るものでもテナンシのルートに作る。1 つのコンパートメントに予算は 1 つだけ。額はレートカードの通貨で、1〜999,999,999,999。アラートは実際の費用（Actual）か予測（Forecast）で、割合（0 より大きく 10,000 以下）か額で決める（2026-11-29）。
 - **Logging Analytics**: 価格の API で、1 単位で月 372 USD から（2026-11-26）。
 - **Cloud Guard**: 設定と操作の監視（Configuration・Activity の検出）は、価格の API に品目が無い。無料のテナンシ（Always Free だけ）では有効にできない（公式ドキュメント）。VM の中を監視する Instance Security は、Standard が 1 台・1 時間あたり 0 円、Enterprise が 1 台・1 時間あたり 1.0695 円（1 台を 1 か月動かすと約 780 円）。都度のクエリ（Enterprise）は月 95 万回まで 0 円、それを超えると 1 回 0.155 円（2026-11-13 に価格の API で確認。品目 B108188・B108189・B108190）。無料のレシピ（Standard）は、検出の規則が 2 つで、1 リージョンあたり 5 台まで（公式ドキュメント）。
 
@@ -108,8 +109,9 @@ PAYG のアカウントは対象外という情報が多いが（コミュニテ
 - [Always Free の MySQL の DB システムの作成](https://docs.oracle.com/iaas/mysql-database/doc/creating-always-free-db-system.html)
 - [Changing the Administrator Password of a DB System](https://docs.oracle.com/en-us/iaas/mysql-database/doc/changing-administrator-password-db-system.html)（管理者のパスワードの決まり）
 - [Always Free Autonomous Database の制限](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/autonomous-always-free.html)
-- Oracle の価格の API: `https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?currencyCode=JPY`（Oracle の見積もりツールが使う価格表。Cloud Guard・公開 IP は 2026-11-13、DNS は 2026-11-23、ロードバランサーとゲートウェイは 2026-11-25）
+- Oracle の価格の API: `https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/?currencyCode=JPY`（Oracle の見積もりツールが使う価格表。Cloud Guard・公開 IP は 2026-11-13、DNS は 2026-11-23、ロードバランサーとゲートウェイは 2026-11-25、Budgets は 2026-11-29）
 - [Release Announcement: Reserved Public IPs](https://blogs.oracle.com/cloud-infrastructure/release-announcement-reserved-public-ips-are-now-available-on-oracle-cloud-infrastructure)（予約済みの公開 IP は無料とする発表）
 - [Network Load Balancer Overview](https://docs.oracle.com/en-us/iaas/Content/NetworkLoadBalancer/overview.htm)（Always Free・帯域）
 - [Instance Security](https://docs.oracle.com/en-us/iaas/cloud-guard/using/cgis.htm)（Cloud Guard の Instance Security の無料のレシピ）
+- [Budgets](https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/budgetsoverview.htm)・[Creating a Budget](https://docs.oracle.com/en-us/iaas/Content/Billing/Tasks/create-budget.htm)（予算はルートに作る・1 つのコンパートメントに 1 つ・額とアラートの決まり）
 - [Getting Started with Cloud Guard](https://docs.oracle.com/en-us/iaas/cloud-guard/using/part-start.htm)（無料のテナンシでは有効にできない）

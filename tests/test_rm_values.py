@@ -55,6 +55,18 @@ def test_select_keys_rejects_missing() -> None:
         rm_values.select_keys({"tenancy_ocid": "ocid1.tenancy.oc1..xxxx"}, ["tenancy_ocid", "region"])
 
 
+def test_select_keys_passes_optional_keys_only_when_set() -> None:
+    # budget_amount of the base stack may be left out (no budget).
+    keys = ["region", "budget_amount?"]
+    assert rm_values.select_keys({"region": "us-ashburn-1"}, keys) == {"region": "us-ashburn-1"}
+    assert rm_values.select_keys({"region": "us-ashburn-1", "budget_amount": 1000, "x": 1}, keys) == {
+        "region": "us-ashburn-1",
+        "budget_amount": 1000,
+    }
+    with pytest.raises(ValueError, match="not set: region$"):
+        rm_values.select_keys({"budget_amount": 1000}, keys)
+
+
 def test_state_outputs_skips_sensitive() -> None:
     state = {
         "outputs": {
@@ -89,7 +101,7 @@ def test_cli_variables_take_everything_from_the_file(tmp_path: Path) -> None:
     main = subprocess.run([sys.executable, SCRIPT, "variables", path], capture_output=True, text=True, env=env, check=True)
     assert json.loads(main.stdout) == {"region": "us-ashburn-1", "notification_email": "admin@example.com", "dns_zone": "afp.example.com"}
 
-    # The base stack selects its keys and gets no email.
+    # Selected keys only.
     base = subprocess.run([sys.executable, SCRIPT, "variables", path, "region,dns_zone"], capture_output=True, text=True, check=True)
     assert json.loads(base.stdout) == {"region": "us-ashburn-1", "dns_zone": "afp.example.com"}
 
@@ -102,6 +114,11 @@ def test_cli_variables_with_keys(tmp_path: Path) -> None:
         [sys.executable, SCRIPT, "variables", path, "region"], capture_output=True, text=True, check=True
     )
     assert json.loads(only.stdout) == {"region": "us-ashburn-1"}
+
+    optional = subprocess.run(
+        [sys.executable, SCRIPT, "variables", path, "region,budget_amount?"], capture_output=True, text=True, check=True
+    )
+    assert json.loads(optional.stdout) == {"region": "us-ashburn-1"}
 
     missing = subprocess.run([sys.executable, SCRIPT, "variables", path, "region,tenancy_ocid"], capture_output=True, text=True)
     assert missing.returncode == 1
