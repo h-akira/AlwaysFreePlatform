@@ -298,7 +298,7 @@ def test_install_restarts_docker_only_when_daemon_json_changes(tmp_path: Path) -
     assert restart in calls
     assert "com.docker.compose.project" in (tmp_path / "docker" / "daemon.json").read_text()
     assert (tmp_path / "systemd" / "afp-backup.timer").is_file()
-    assert ["systemctl", "enable", "--now", "afp-backup.timer"] in calls
+    assert ["systemctl", "enable", "--now", "afp-backup.timer", "afp-check-db.timer", "afp-check-disk.timer"] in calls
     world = World()
     cli.cmd_install(make_ctx(tmp_path, world), NO_ARGS)
     assert restart not in [c["args"] for c in world.calls]

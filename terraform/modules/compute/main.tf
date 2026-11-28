@@ -145,6 +145,12 @@ resource "oci_core_instance" "vm" {
       name          = "Bastion"
       desired_state = "ENABLED"
     }
+    # MemoryUtilization for alarm-afp-vm-memory. It already ran without this
+    # line, but the docs do not say it is on by default.
+    plugins_config {
+      name          = "Compute Instance Monitoring"
+      desired_state = "ENABLED"
+    }
   }
 
   lifecycle {

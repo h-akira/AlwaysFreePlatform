@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from afp import backup_timer, caddy, config, db, docker_config
+from afp import caddy, checks, config, db, docker_config, timers
 from afp import project as projects_mod
 from afp.errors import AfpError
 from afp.lock import Lock
@@ -73,7 +73,7 @@ def cmd_install(ctx: Context, args: argparse.Namespace) -> str:
         ctx.runner.run(["docker", "network", "create", NETWORK])
     ctx.paths.caddy_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
     ctx.paths.run_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    backup_timer.install(ctx, ctx.paths.systemd_dir)
+    timers.install(ctx, ctx.paths.systemd_dir)
     return "installed"
 
 
@@ -181,6 +181,18 @@ def cmd_backup(ctx: Context, args: argparse.Namespace) -> str:
     return summary
 
 
+def cmd_check_db(ctx: Context, args: argparse.Namespace) -> str:
+    """Ask the DB SELECT 1; send afp/check_db_ok (1/0), which the alarm
+    alarm-afp-check-db watches. Run every hour by afp-check-db.timer."""
+    return checks.check_db(ctx, load_config(ctx))
+
+
+def cmd_check_disk(ctx: Context, args: argparse.Namespace) -> str:
+    """Send how full the VM's disk is (afp/disk_used_percent), which the alarm
+    alarm-afp-vm-disk watches. Run every hour by afp-check-disk.timer."""
+    return checks.check_disk(ctx, load_config(ctx))
+
+
 @dataclass(frozen=True)
 class Command:
     run: Callable[[Context, argparse.Namespace], str]
@@ -188,6 +200,8 @@ class Command:
     upload_log: bool
     # (name, nargs) of positional arguments
     arguments: tuple[tuple[str, Optional[str]], ...] = ()
+    # Keep the log only when the command fails (the hourly checks).
+    upload_log_only_on_failure: bool = False
 
 
 COMMANDS = {
@@ -216,6 +230,18 @@ COMMANDS = {
         "dump the DB of PROJECT, or of every project, to the dumps bucket",
         upload_log=True,
         arguments=(("project", "?"),),
+    ),
+    "check-db": Command(
+        cmd_check_db,
+        "check that the DB answers and send the result to the metric afp/check_db_ok",
+        upload_log=True,
+        upload_log_only_on_failure=True,
+    ),
+    "check-disk": Command(
+        cmd_check_disk,
+        "send how full the VM's disk is to the metric afp/disk_used_percent",
+        upload_log=True,
+        upload_log_only_on_failure=True,
     ),
 }
 
@@ -268,7 +294,13 @@ def main(argv: list[str] | None = None, paths: Paths | None = None) -> int:
     except Exception as e:  # keep the summary short; the traceback goes to the log
         log.detail(traceback.format_exc())
         result, code = f"FAILED: unexpected {type(e).__name__}: {e}", 1
-    where = finish(ctx, object_name, command.upload_log)
+    if command.upload_log_only_on_failure and code == 0:
+        # Hourly: a log of every run that went well would only pile up.
+        log.close()
+        log.path.unlink(missing_ok=True)
+        where = "not kept (the run went well)"
+    else:
+        where = finish(ctx, object_name, command.upload_log)
     # The summary is printed last; make keeps only the end of the output.
     print(f"afp {args.command}: {truncate(result)}\nlog: {where}")
     return code

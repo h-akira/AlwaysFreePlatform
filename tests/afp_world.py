@@ -78,6 +78,7 @@ class World:
         self.broken_dump: set[str] = set()  # databases whose mysqldump fails
         self.metrics: list[dict[str, Any]] = []  # metric objects posted
         self.metric_fails = False
+        self.db_down = False  # the mysql client cannot connect
 
     def release(self, project: str, tag: str) -> None:
         self.objects[f"releases/{project}/{tag}/compose.afp.yaml"] = f"# {project} {tag}\n"
@@ -197,6 +198,8 @@ class World:
                 return 2, "", "mysqldump: Got error: 2003: Can't connect to MySQL server"
             stdout_path.write_text("-- dump\n")
             return 0, "", ""
+        if args[:2] == ["docker", "run"] and "mysql" in args and self.db_down:
+            return 1, "", "ERROR 2003 (HY000): Can't connect to MySQL server on '10.0.1.10:3306' (110)"
         if args[0] == "docker":
             return 0, "", ""  # run mysql, login, network
         return 9, "", f"unexpected command: {line}"

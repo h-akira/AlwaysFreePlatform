@@ -242,4 +242,6 @@ module "alarm" {
   compartment_id   = local.compartment_id
   topic_id         = module.devops.topic_id
   logs_bucket_name = local.logs_bucket_name
+  nlb_id           = module.nlb.nlb_id
+  instance_id      = module.vm.instance_id
 }

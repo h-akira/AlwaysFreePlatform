@@ -98,3 +98,7 @@ resource "oci_network_load_balancer_listener" "https" {
 output "public_ip" {
   value = one([for ip in oci_network_load_balancer_network_load_balancer.nlb.ip_addresses : ip.ip_address if ip.is_public])
 }
+
+output "nlb_id" {
+  value = oci_network_load_balancer_network_load_balancer.nlb.id
+}
