@@ -294,6 +294,8 @@ def main(argv: list[str] | None = None, paths: Paths | None = None) -> int:
     except Exception as e:  # keep the summary short; the traceback goes to the log
         log.detail(traceback.format_exc())
         result, code = f"FAILED: unexpected {type(e).__name__}: {e}", 1
+    # Into the log before it is closed and uploaded; stdout gets it below.
+    log.info(f"afp {args.command}: {result}", echo=False)
     if command.upload_log_only_on_failure and code == 0:
         # Hourly: a log of every run that went well would only pile up.
         log.close()

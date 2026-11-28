@@ -37,11 +37,13 @@ class Log:
         self._file = open(path, "a", encoding="utf-8")
         self._echo = echo if echo is not None else sys.stderr
 
-    def info(self, message: str) -> None:
+    def info(self, message: str, echo: bool = True) -> None:
+        """A line with a timestamp in the file; also on stderr unless echo is False."""
         now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
         self._file.write(f"{now} {message}\n")
         self._file.flush()
-        print(message, file=self._echo, flush=True)
+        if echo:
+            print(message, file=self._echo, flush=True)
 
     def detail(self, text: str) -> None:
         """Long output (e.g. of a command): the file only."""

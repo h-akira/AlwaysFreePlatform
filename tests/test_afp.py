@@ -386,6 +386,45 @@ def test_main_uploads_the_log_with_the_real_runner(tmp_path: Path, capsys: pytes
     assert not list((tmp_path / "log").iterdir())  # removed once uploaded
 
 
+def test_main_writes_the_summary_into_the_uploaded_log(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                       monkeypatch: pytest.MonkeyPatch) -> None:
+    """The summary goes into the log before the upload, and only once to the console."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # Keep a copy of the file given to `oci os object put --file`.
+    (bin_dir / "oci").write_text(
+        '#!/bin/sh\nwhile [ $# -gt 0 ]; do\n'
+        f'  if [ "$1" = --file ]; then cp "$2" "{tmp_path}/uploaded.log"; fi\n'
+        '  shift\ndone\n'
+    )
+    (bin_dir / "oci").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+
+    def work(ctx: cli.Context, args: argparse.Namespace) -> str:
+        ctx.oci = Oci(ctx.runner, "us-ashburn-1", namespace="ns")
+        return "done"
+
+    monkeypatch.setitem(cli.COMMANDS, "sync", cli.Command(work, "h", upload_log=True))
+    assert cli.main(["sync"], paths=paths_in(tmp_path)) == 0
+    captured = capsys.readouterr()
+    assert captured.out.count("afp sync: OK: done") == 1
+    assert "afp sync" not in captured.err
+    assert (tmp_path / "uploaded.log").read_text().splitlines()[-1].endswith(" afp sync: OK: done")
+
+
+def test_main_writes_the_summary_into_a_log_kept_on_the_vm(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(ctx: cli.Context, args: argparse.Namespace) -> str:
+        raise AfpError("x" * 5000)
+
+    monkeypatch.setitem(cli.COMMANDS, "check-db", cli.Command(boom, "h", upload_log=True, upload_log_only_on_failure=True))
+    assert cli.main(["check-db"], paths=paths_in(tmp_path)) == 1
+    [kept] = list((tmp_path / "log").iterdir())
+    # Not truncated in the log, unlike on the console.
+    assert kept.read_text().splitlines()[-1].endswith(" afp check-db: FAILED: " + "x" * 5000)
+    assert capsys.readouterr().err.count("x" * 5000) == 1  # the error line only
+
+
 def test_main_reports_a_failed_upload(tmp_path: Path, capsys: pytest.CaptureFixture[str],
                                       monkeypatch: pytest.MonkeyPatch) -> None:
     bin_dir = tmp_path / "bin"
